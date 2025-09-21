@@ -81,7 +81,7 @@ install_packages() {
     print_header "Installing Virtualization Packages"
     
     print_status "Installing QEMU and related packages..."
-    sudo pacman -S qemu-full virt-manager libvirt edk2-ovmf bridge-utils dnsmasq vde2 openbsd-netcat iptables-nft ntfs-3g
+    sudo pacman -S qemu-full virt-manager libvirt edk2-ovmf bridge-utils dnsmasq vde2 openbsd-netcat iptables-nft ntfs-3g dosfstools
     
     print_status "Enabling and starting libvirt service..."
     sudo systemctl enable --now libvirtd
@@ -390,9 +390,10 @@ prepare_second_ssd() {
         print_status "Partitioning options:"
         echo "1) Use entire drive for single VM (recommended for beginners)"
         echo "2) Create multiple partitions for different VMs"
-        echo "3) Skip partitioning (use raw device)"
+        echo "3) Create EFI + multiple Windows partitions (recommended for multiple Windows VMs)"
+        echo "4) Skip partitioning (use raw device)"
         
-        read -p "Select partitioning option (1-3): " partition_choice
+        read -p "Select partitioning option (1-4): " partition_choice
         
         case $partition_choice in
             1)
@@ -402,6 +403,9 @@ prepare_second_ssd() {
                 create_multiple_partitions "$device_path"
                 ;;
             3)
+                create_efi_windows_partitions "$device_path"
+                ;;
+            4)
                 print_status "Skipping partitioning. Using raw device."
                 print_warning "Remember to use this raw device when creating your VM in virt-manager."
                 ;;
@@ -418,9 +422,19 @@ prepare_second_ssd() {
 
 # Function to check and install required formatting tools
 check_formatting_tools() {
+    local missing_tools=()
+    
     if ! command -v mkfs.ntfs &> /dev/null; then
-        print_status "Installing NTFS formatting tools..."
-        sudo pacman -S --noconfirm ntfs-3g
+        missing_tools+=("ntfs-3g")
+    fi
+    
+    if ! command -v mkfs.fat &> /dev/null; then
+        missing_tools+=("dosfstools")
+    fi
+    
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        print_status "Installing missing formatting tools: ${missing_tools[*]}..."
+        sudo pacman -S --noconfirm "${missing_tools[@]}"
     fi
 }
 
@@ -551,6 +565,130 @@ create_multiple_partitions() {
     fi
 }
 
+# Function to create EFI + multiple Windows partitions
+create_efi_windows_partitions() {
+    local device_path="$1"
+    
+    print_status "Creating EFI System Partition + multiple Windows partitions..."
+    
+    # Check and install formatting tools
+    check_formatting_tools
+    
+    # Get device size
+    local device_size=$(sudo parted "$device_path" print | grep "Disk $device_path" | awk '{print $3}')
+    print_status "Device size: $device_size"
+    
+    # Create GPT partition table
+    sudo parted "$device_path" mklabel gpt
+    
+    echo
+    print_status "EFI + Windows Partition Setup:"
+    echo "This will create:"
+    echo "1. EFI System Partition (500MB, FAT32) - Required for UEFI booting"
+    echo "2. Multiple Windows partitions (NTFS) - For different Windows installations"
+    echo
+    
+    # Create EFI System Partition (500MB)
+    print_status "Creating EFI System Partition (500MB)..."
+    sudo parted "$device_path" mkpart primary fat32 0% 500MB
+    sudo parted "$device_path" set 1 esp on
+    
+    # Determine EFI partition path
+    local efi_partition_path
+    if [[ "$device_path" =~ nvme ]]; then
+        efi_partition_path="${device_path}p1"
+    else
+        efi_partition_path="${device_path}1"
+    fi
+    
+    # Format EFI partition as FAT32
+    print_status "Formatting EFI partition as FAT32..."
+    sudo mkfs.fat -F32 -n "EFI" "$efi_partition_path"
+    
+    print_status "EFI System Partition created: $efi_partition_path"
+    
+    # Create Windows partitions
+    echo
+    print_status "Now creating Windows partitions..."
+    echo "You can create up to 3 Windows partitions (partitions 2-4)."
+    echo "Each partition will be formatted with NTFS for Windows compatibility."
+    
+    local windows_partition_count=0  # Count of Windows partitions created
+    local current_start="500MB"
+    
+    while [[ $windows_partition_count -lt 3 ]]; do
+        echo
+        read -p "Create Windows partition $((windows_partition_count + 1))? (y/N): " -n 1 -r
+        echo
+        
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            windows_partition_count=$((windows_partition_count + 1))
+            local partition_number=$((windows_partition_count + 1))  # +1 because EFI is partition 1
+            local partition_path
+            
+            # Determine correct partition path based on device type
+            if [[ "$device_path" =~ nvme ]]; then
+                partition_path="${device_path}p$partition_number"
+            else
+                partition_path="${device_path}$partition_number"
+            fi
+            
+            echo "Windows partition $windows_partition_count:"
+            read -p "  Size (e.g., 100GB, 50%, or remaining): " partition_size
+            
+            if [[ "$partition_size" == "remaining" ]]; then
+                local end_size="100%"
+            else
+                local end_size="${partition_size}"
+            fi
+            
+            # Create Windows partition
+            sudo parted "$device_path" mkpart primary ntfs "$current_start" "$end_size"
+            
+            # Format with NTFS
+            print_status "Formatting Windows partition $windows_partition_count with NTFS..."
+            if command -v mkfs.ntfs &> /dev/null; then
+                sudo mkfs.ntfs -f -L "Windows$windows_partition_count" "$partition_path"
+            else
+                print_error "mkfs.ntfs not found. Installing ntfs-3g..."
+                sudo pacman -S --noconfirm ntfs-3g
+                sudo mkfs.ntfs -f -L "Windows$windows_partition_count" "$partition_path"
+            fi
+            
+            print_status "Windows partition $windows_partition_count created: $partition_path"
+            
+            # Update start for next partition
+            if [[ "$partition_size" == "remaining" ]] || [[ "$partition_size" == "100%" ]]; then
+                break
+            else
+                current_start="$end_size"
+            fi
+        else
+            break
+        fi
+    done
+    
+    # Show summary
+    echo
+    print_status "Partition layout created:"
+    print_status "EFI System Partition: $efi_partition_path (500MB, FAT32)"
+    
+    if [[ $windows_partition_count -gt 0 ]]; then
+        print_status "Windows partitions:"
+        for ((i=1; i<=windows_partition_count; i++)); do
+            local partition_number=$((i + 1))  # +1 because EFI is partition 1
+            if [[ "$device_path" =~ nvme ]]; then
+                echo "  Windows$i: ${device_path}p$partition_number"
+            else
+                echo "  Windows$i: ${device_path}$partition_number"
+            fi
+        done
+    fi
+    
+    print_warning "Use the specific Windows partition when creating VMs in virt-manager."
+    print_warning "The EFI partition will be automatically used for UEFI booting."
+}
+
 # Function to show virt-manager guidance
 show_vm_creation_guide() {
     print_header "VM Creation Guide for virt-manager"
@@ -560,6 +698,10 @@ To create your Windows VM with GPU passthrough:
 
 NOTE: If you created multiple partitions in step 6, you can create multiple VMs
 using different partitions (e.g., /dev/sdb1 for Windows, /dev/sdb2 for Linux, etc.)
+
+If you used option 3 (EFI + Windows partitions), you have:
+- EFI System Partition (500MB, FAT32) - Required for UEFI booting
+- Multiple Windows partitions (NTFS) - For different Windows installations
 
 1. Launch virt-manager:
    virt-manager
@@ -576,6 +718,8 @@ using different partitions (e.g., /dev/sdb1 for Windows, /dev/sdb2 for Linux, et
    - Browse to your storage device:
      * Single partition: /dev/sdb1 (SATA) or /dev/nvme1n1p1 (NVMe)
      * Multiple partitions: /dev/sdb1, /dev/sdb2 (SATA) or /dev/nvme1n1p1, /dev/nvme1n1p2 (NVMe)
+     * EFI + Windows: /dev/sdb2, /dev/sdb3 (SATA) or /dev/nvme1n1p2, /dev/nvme1n1p3 (NVMe)
+       Note: Use Windows partitions (2,3,4...), EFI partition (1) is handled automatically
      * Raw device: /dev/sdb or /dev/nvme1n1 (if no partitioning)
    - Bus type: VirtIO (for best performance)
 
@@ -677,6 +821,7 @@ show_menu() {
     print_warning "[Must Reboot- Make sure your Monitor is plugged into your iGPU]"
     echo "6) Prepare Other SSD (Setting up Another Physical"
     echo "   Drive for VM Storage) [Unmount, Wipe & Partition]"
+    echo "   Options: Single, Multiple, EFI+Windows, or Raw"
     echo "7) Show VM Creation Guide (virt-manager)"
     echo "8) Validate System"
     echo "9) Run Complete Setup (Steps 1-6)"

@@ -44,6 +44,7 @@ An interactive bash script that automates the complete setup of QEMU on Arch Lin
 
 ### 1. Package Installation
 - Installs QEMU, virt-manager, libvirt, and all required packages
+- Installs formatting tools (ntfs-3g, dosfstools) for partitioning
 - Enables and starts libvirt service
 - Adds user to libvirt group
 - Validates virtualization support
@@ -73,11 +74,13 @@ An interactive bash script that automates the complete setup of QEMU on Arch Lin
 ### 6. Storage Preparation
 - Lists available storage devices
 - Safely prepares second SSD for VM storage
-- **NEW**: Partitioning options for multiple VMs
+- **NEW**: Advanced partitioning options for multiple VMs
   - Single partition (entire drive)
   - Multiple partitions (up to 4 for different VMs)
+  - **EFI + Windows partitions** (500MB EFI + multiple Windows partitions)
   - Raw device (no partitioning)
 - Formats partitions with NTFS for Windows compatibility
+- Creates EFI System Partition (FAT32) for UEFI booting
 
 ### 7. VM Creation Guide
 - Step-by-step virt-manager configuration
@@ -94,7 +97,7 @@ The script provides an interactive menu with the following options:
 3. **Check IOMMU Groups** - Analyze PCI device grouping
 4. **Configure VFIO** - Set up VFIO for GPU binding
 5. **Configure initramfs** - Modify initramfs for VFIO
-6. **Prepare Second SSD** - Prepare storage for VM(s) with partitioning options
+6. **Prepare Second SSD** - Prepare storage for VM(s) with advanced partitioning options
 7. **Show VM Creation Guide** - Display virt-manager instructions
 8. **Validate System** - Check configuration status
 9. **Run Complete Setup** - Execute steps 1-6 automatically

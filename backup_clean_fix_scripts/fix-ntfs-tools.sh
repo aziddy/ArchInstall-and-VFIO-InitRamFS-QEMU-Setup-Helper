@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Quick fix script to install NTFS formatting tools
+# Quick fix script to install formatting tools
 # Run with: sudo ./fix-ntfs-tools.sh
 
-echo "Installing NTFS formatting tools..."
+echo "Installing formatting tools..."
 
-# Install ntfs-3g package
-sudo pacman -S --noconfirm ntfs-3g
+# Install ntfs-3g and dosfstools packages
+sudo pacman -S --noconfirm ntfs-3g dosfstools
 
-echo "NTFS formatting tools installed!"
+echo "Formatting tools installed!"
 echo "You can now continue with the partitioning process."

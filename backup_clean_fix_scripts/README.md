@@ -8,7 +8,7 @@ This folder contains utility scripts for troubleshooting and fixing QEMU VFIO se
 - **`fix-grub-vfio.sh`** - Complete GRUB VFIO fix with cleanup and proper quotation marks
 - **`fix-grub-quotes.sh`** - Quick fix for missing quotation marks in GRUB configuration
 - **`fix-vfio-simple.sh`** - Simple VFIO configuration fix with hardcoded device IDs
-- **`fix-ntfs-tools.sh`** - Install NTFS formatting tools for partitioning
+- **`fix-ntfs-tools.sh`** - Install formatting tools (NTFS and FAT32) for partitioning
 
 ### Clean Scripts
 - **`clean-grub-vfio.sh`** - Remove all VFIO parameters from GRUB configuration
@@ -29,7 +29,7 @@ sudo ./fix-grub-vfio.sh
 # Simple VFIO configuration fix
 sudo ./fix-vfio-simple.sh
 
-# Install NTFS formatting tools
+# Install formatting tools (NTFS and FAT32)
 sudo ./fix-ntfs-tools.sh
 ```
 
@@ -50,7 +50,7 @@ sudo ./clean-grub-vfio.sh
 - **fix-grub-quotes.sh**: When GRUB_CMDLINE_LINUX_DEFAULT is missing closing quotation mark
 - **fix-grub-vfio.sh**: When you need to completely reset and fix GRUB VFIO configuration
 - **fix-vfio-simple.sh**: When you need a quick VFIO fix with known device IDs
-- **fix-ntfs-tools.sh**: When mkfs.ntfs command is not found during partitioning
+- **fix-ntfs-tools.sh**: When mkfs.ntfs or mkfs.fat commands are not found during partitioning
 - **clean-grub-vfio.sh**: When you want to remove all VFIO parameters and start fresh
 - **test-grub-regex.sh**: When you want to verify regex patterns work correctly
 
