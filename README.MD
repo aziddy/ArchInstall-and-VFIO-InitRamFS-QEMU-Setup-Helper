@@ -72,8 +72,12 @@ An interactive bash script that automates the complete setup of QEMU on Arch Lin
 
 ### 6. Storage Preparation
 - Lists available storage devices
-- Safely prepares second SSD for Windows VM
-- Provides guidance on device selection
+- Safely prepares second SSD for VM storage
+- **NEW**: Partitioning options for multiple VMs
+  - Single partition (entire drive)
+  - Multiple partitions (up to 4 for different VMs)
+  - Raw device (no partitioning)
+- Formats partitions with NTFS for Windows compatibility
 
 ### 7. VM Creation Guide
 - Step-by-step virt-manager configuration
@@ -90,7 +94,7 @@ The script provides an interactive menu with the following options:
 3. **Check IOMMU Groups** - Analyze PCI device grouping
 4. **Configure VFIO** - Set up VFIO for GPU binding
 5. **Configure initramfs** - Modify initramfs for VFIO
-6. **Prepare Second SSD** - Prepare storage for Windows VM
+6. **Prepare Second SSD** - Prepare storage for VM(s) with partitioning options
 7. **Show VM Creation Guide** - Display virt-manager instructions
 8. **Validate System** - Check configuration status
 9. **Run Complete Setup** - Execute steps 1-6 automatically
@@ -115,6 +119,12 @@ The script provides an interactive menu with the following options:
 - Verify IOMMU groups after reboot
 - Ensure all VFIO modules are loaded
 
+### Utility Scripts
+If you encounter issues, check the `backup_clean_fix_scripts/` folder for specialized fix scripts:
+- **GRUB issues**: Use `fix-grub-vfio.sh` or `fix-grub-quotes.sh`
+- **VFIO configuration**: Use `fix-vfio-simple.sh`
+- **Clean slate**: Use `clean-grub-vfio.sh` to start fresh
+
 ## Manual Steps After Script
 
 1. **Reboot your system** after running the complete setup
@@ -128,7 +138,14 @@ The script provides an interactive menu with the following options:
 ```
 ├── qemu-vfio-setup.sh          # Main interactive setup script
 ├── QEMU Setup Linux.md         # Detailed manual setup guide
-└── README.MD                   # This file
+├── README.MD                   # This file
+└── backup_clean_fix_scripts/   # Utility scripts for troubleshooting
+    ├── README.md               # Documentation for utility scripts
+    ├── fix-grub-vfio.sh        # Complete GRUB VFIO fix
+    ├── fix-grub-quotes.sh      # Fix missing quotation marks
+    ├── fix-vfio-simple.sh      # Simple VFIO configuration fix
+    ├── clean-grub-vfio.sh      # Remove VFIO parameters
+    └── test-grub-regex.sh      # Test GRUB regex patterns
 ```
 
 ## Logs and Backups
@@ -152,9 +169,3 @@ If you encounter issues:
 2. Run the system validation option
 3. Review the manual setup guide in `QEMU Setup Linux.md`
 4. Ensure you've rebooted after configuration changes 
-
-
-
-IOMMU GROUP 14
-10de:2c02
-10de:22e9

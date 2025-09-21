@@ -21,7 +21,7 @@ BACKUP_DIR="/etc/backup-$(date +%Y%m%d-%H%M%S)"
 
 # Logging function
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
 }
 
 # Print colored output
@@ -81,7 +81,7 @@ install_packages() {
     print_header "Installing Virtualization Packages"
     
     print_status "Installing QEMU and related packages..."
-    sudo pacman -S qemu-full virt-manager libvirt edk2-ovmf bridge-utils dnsmasq vde2 openbsd-netcat iptables-nft
+    sudo pacman -S qemu-full virt-manager libvirt edk2-ovmf bridge-utils dnsmasq vde2 openbsd-netcat iptables-nft ntfs-3g
     
     print_status "Enabling and starting libvirt service..."
     sudo systemctl enable --now libvirtd
@@ -210,7 +210,25 @@ EOF
     print_warning "Note the [vendor:device] IDs (e.g., 10de:2783) for your GPU and its audio device."
 }
 
-# Function to get GPU device IDs
+# Function to get GPU device IDs (silent version for command substitution)
+get_gpu_ids_silent() {
+    local gpu_info=$(lspci -nnk | grep -i nvidia)
+    if [[ -z "$gpu_info" ]]; then
+        return 1
+    fi
+    
+    # Extract device IDs (only the main PCI device IDs, not subsystem IDs)
+    # Look for the pattern [vendor:device] in the main device lines, not subsystem lines
+    local device_ids=$(echo "$gpu_info" | grep -E 'VGA compatible controller|Audio device' | grep -o '\[[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f][0-9a-f][0-9a-f]\]' | sed 's/\[//g; s/\]//g' | tr '\n' ',' | sed 's/,$//')
+    
+    if [[ -n "$device_ids" ]]; then
+        echo "$device_ids"
+    else
+        return 1
+    fi
+}
+
+# Function to get GPU device IDs (with user output)
 get_gpu_ids() {
     print_status "Identifying NVIDIA GPU device IDs..."
     
@@ -220,33 +238,46 @@ get_gpu_ids() {
         return 1
     fi
     
-    echo "Found NVIDIA GPU(s):"
-    echo "$gpu_info"
+    # Display GPU info for user reference
+    echo "Found NVIDIA GPU(s):" >&2
+    echo "$gpu_info" >&2
     
-    # Extract device IDs
-    local device_ids=$(echo "$gpu_info" | grep -o '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f][0-9a-f][0-9a-f]' | tr '\n' ',' | sed 's/,$//')
-    
-    if [[ -n "$device_ids" ]]; then
-        print_status "Extracted device IDs: $device_ids"
-        echo "$device_ids"
-    else
+    # Get device IDs using silent function
+    local device_ids=$(get_gpu_ids_silent)
+    if [[ $? -ne 0 ]]; then
         print_error "Could not extract device IDs from GPU information."
         return 1
     fi
+    
+    print_status "Extracted device IDs: $device_ids"
+    echo "$device_ids"
 }
 
 # Function to configure VFIO for GPU Passthrough - Step 4
 configure_vfio() {
     print_header "Configuring VFIO for GPU Passthrough"
     
-    # Get GPU device IDs
+    # Clean up any corrupted VFIO configuration file
+    if [[ -f /etc/modprobe.d/vfio.conf ]]; then
+        print_status "Cleaning up existing VFIO configuration file..."
+        sudo rm -f /etc/modprobe.d/vfio.conf
+    fi
+    
+    # Get GPU device IDs using silent function
     local device_ids
-    device_ids=$(get_gpu_ids)
+    device_ids=$(get_gpu_ids_silent)
     if [[ $? -ne 0 ]]; then
+        print_error "Could not extract device IDs from GPU information."
         return 1
     fi
     
     print_status "Configuring VFIO with device IDs: $device_ids"
+    
+    # Validate device IDs format
+    if [[ ! "$device_ids" =~ ^[0-9a-f]{4}:[0-9a-f]{4}(,[0-9a-f]{4}:[0-9a-f]{4})*$ ]]; then
+        print_error "Invalid device IDs format: $device_ids"
+        return 1
+    fi
     
     # Create VFIO configuration file
     print_status "Creating VFIO configuration file..."
@@ -263,13 +294,32 @@ EOF
     
     sudo cp "$grub_file" "$temp_file"
     
-    # Add VFIO parameters to existing GRUB_CMDLINE_LINUX_DEFAULT
-    sudo sed -i "s/GRUB_CMDLINE_LINUX_DEFAULT=\".*\"/& vfio-pci.ids=$device_ids/" "$temp_file"
+    # Check if VFIO parameters are already present
+    if grep -q "vfio-pci.ids" "$temp_file"; then
+        print_warning "VFIO parameters already present in GRUB configuration"
+        print_status "Updating VFIO device IDs..."
+        # Replace existing VFIO parameters with new ones (more specific pattern)
+        sudo sed -i "s|vfio-pci\.ids=[^[:space:]\"]*|vfio-pci.ids=$device_ids|g" "$temp_file"
+    else
+        print_status "Adding VFIO parameters to GRUB configuration..."
+        # Add VFIO parameters to existing GRUB_CMDLINE_LINUX_DEFAULT
+        if ! sudo sed -i "s|GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"|GRUB_CMDLINE_LINUX_DEFAULT=\"\1 vfio-pci.ids=$device_ids\"|" "$temp_file"; then
+            print_error "Failed to update GRUB configuration with VFIO parameters"
+            rm -f "$temp_file"
+            return 1
+        fi
+    fi
     
+    # Apply the changes
     sudo mv "$temp_file" "$grub_file"
     
     print_status "Updating GRUB configuration..."
-    sudo grub-mkconfig -o /boot/grub/grub.cfg
+    if sudo grub-mkconfig -o /boot/grub/grub.cfg; then
+        print_status "GRUB configuration updated successfully"
+    else
+        print_error "Failed to update GRUB configuration"
+        return 1
+    fi
     
     print_status "VFIO configuration completed!"
 }
@@ -308,9 +358,9 @@ configure_initramfs() {
     print_warning "initramfs configuration completed. A reboot is required for changes to take effect."
 }
 
-# Function to prepare second SSD
+# Function to prepare second SSD with partitioning options
 prepare_second_ssd() {
-    print_header "Preparing Second SSD for Windows VM"
+    print_header "Preparing Second SSD for VM Storage"
     
     print_status "Available storage devices:"
     lsblk
@@ -335,10 +385,169 @@ prepare_second_ssd() {
         print_status "Wiping device (first 100MB)..."
         sudo dd if=/dev/zero of="$device_path" bs=1M count=100 status=progress
         
-        print_status "Device $device_path prepared for Windows VM."
-        print_warning "Remember to use this device when creating your VM in virt-manager."
+        # Ask about partitioning
+        echo
+        print_status "Partitioning options:"
+        echo "1) Use entire drive for single VM (recommended for beginners)"
+        echo "2) Create multiple partitions for different VMs"
+        echo "3) Skip partitioning (use raw device)"
+        
+        read -p "Select partitioning option (1-3): " partition_choice
+        
+        case $partition_choice in
+            1)
+                create_single_partition "$device_path"
+                ;;
+            2)
+                create_multiple_partitions "$device_path"
+                ;;
+            3)
+                print_status "Skipping partitioning. Using raw device."
+                print_warning "Remember to use this raw device when creating your VM in virt-manager."
+                ;;
+            *)
+                print_warning "Invalid choice. Skipping partitioning."
+                ;;
+        esac
+        
+        print_status "Device $device_path preparation completed!"
     else
         print_status "Skipping device preparation."
+    fi
+}
+
+# Function to check and install required formatting tools
+check_formatting_tools() {
+    if ! command -v mkfs.ntfs &> /dev/null; then
+        print_status "Installing NTFS formatting tools..."
+        sudo pacman -S --noconfirm ntfs-3g
+    fi
+}
+
+# Function to create a single partition
+create_single_partition() {
+    local device_path="$1"
+    local partition_path
+    
+    # Determine correct partition path based on device type
+    if [[ "$device_path" =~ nvme ]]; then
+        partition_path="${device_path}p1"
+    else
+        partition_path="${device_path}1"
+    fi
+    
+    print_status "Creating single partition on $device_path..."
+    
+    # Check and install formatting tools
+    check_formatting_tools
+    
+    # Create GPT partition table
+    sudo parted "$device_path" mklabel gpt
+    
+    # Create single partition using entire disk
+    sudo parted "$device_path" mkpart primary 0% 100%
+    
+    # Format with NTFS for Windows compatibility
+    print_status "Formatting partition with NTFS..."
+    if command -v mkfs.ntfs &> /dev/null; then
+        sudo mkfs.ntfs -f -L "WindowsVM" "$partition_path"
+    else
+        print_error "mkfs.ntfs not found. Installing ntfs-3g..."
+        sudo pacman -S --noconfirm ntfs-3g
+        sudo mkfs.ntfs -f -L "WindowsVM" "$partition_path"
+    fi
+    
+    print_status "Single partition created: $partition_path"
+    print_warning "Use $partition_path when creating your VM in virt-manager."
+}
+
+# Function to create multiple partitions
+create_multiple_partitions() {
+    local device_path="$1"
+    
+    print_status "Creating multiple partitions on $device_path..."
+    
+    # Check and install formatting tools
+    check_formatting_tools
+    
+    # Get device size
+    local device_size=$(sudo parted "$device_path" print | grep "Disk $device_path" | awk '{print $3}')
+    print_status "Device size: $device_size"
+    
+    # Create GPT partition table
+    sudo parted "$device_path" mklabel gpt
+    
+    echo
+    print_status "Partition setup:"
+    echo "You can create up to 4 partitions for different VMs."
+    echo "Each partition will be formatted with NTFS for Windows compatibility."
+    
+    local partition_count=0
+    local current_start="0%"
+    
+    while [[ $partition_count -lt 4 ]]; do
+        echo
+        read -p "Create partition $((partition_count + 1))? (y/N): " -n 1 -r
+        echo
+        
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            partition_count=$((partition_count + 1))
+            local partition_path
+            
+            # Determine correct partition path based on device type
+            if [[ "$device_path" =~ nvme ]]; then
+                partition_path="${device_path}p$partition_count"
+            else
+                partition_path="${device_path}$partition_count"
+            fi
+            
+            echo "Partition $partition_count:"
+            read -p "  Size (e.g., 100GB, 50%, or remaining): " partition_size
+            
+            if [[ "$partition_size" == "remaining" ]] || [[ "$partition_size" == *"%" ]]; then
+                local end_size="100%"
+            else
+                # Convert to percentage if it's a size
+                local end_size="${partition_size}"
+            fi
+            
+            # Create partition
+            sudo parted "$device_path" mkpart primary "$current_start" "$end_size"
+            
+            # Format with NTFS
+            print_status "Formatting partition $partition_count with NTFS..."
+            if command -v mkfs.ntfs &> /dev/null; then
+                sudo mkfs.ntfs -f -L "VM$partition_count" "$partition_path"
+            else
+                print_error "mkfs.ntfs not found. Installing ntfs-3g..."
+                sudo pacman -S --noconfirm ntfs-3g
+                sudo mkfs.ntfs -f -L "VM$partition_count" "$partition_path"
+            fi
+            
+            print_status "Partition $partition_count created: $partition_path"
+            
+            # Update start for next partition
+            if [[ "$end_size" != "100%" ]]; then
+                current_start="$end_size"
+            else
+                break
+            fi
+        else
+            break
+        fi
+    done
+    
+    if [[ $partition_count -eq 0 ]]; then
+        print_warning "No partitions created. Using raw device."
+    else
+        print_status "Created $partition_count partition(s) on $device_path"
+        
+        # Show correct partition paths based on device type
+        if [[ "$device_path" =~ nvme ]]; then
+            print_warning "Use the specific partition (e.g., ${device_path}p1, ${device_path}p2) when creating VMs in virt-manager."
+        else
+            print_warning "Use the specific partition (e.g., ${device_path}1, ${device_path}2) when creating VMs in virt-manager."
+        fi
     fi
 }
 
@@ -348,6 +557,9 @@ show_vm_creation_guide() {
     
     cat << 'EOF'
 To create your Windows VM with GPU passthrough:
+
+NOTE: If you created multiple partitions in step 6, you can create multiple VMs
+using different partitions (e.g., /dev/sdb1 for Windows, /dev/sdb2 for Linux, etc.)
 
 1. Launch virt-manager:
    virt-manager
@@ -361,7 +573,10 @@ To create your Windows VM with GPU passthrough:
    - Uncheck "Enable storage for this virtual machine"
    - After creation: Add Hardware → Storage
    - Device type: "Select or create custom storage"
-   - Browse to your second SSD device (e.g., /dev/sdb)
+   - Browse to your storage device:
+     * Single partition: /dev/sdb1 (SATA) or /dev/nvme1n1p1 (NVMe)
+     * Multiple partitions: /dev/sdb1, /dev/sdb2 (SATA) or /dev/nvme1n1p1, /dev/nvme1n1p2 (NVMe)
+     * Raw device: /dev/sdb or /dev/nvme1n1 (if no partitioning)
    - Bus type: VirtIO (for best performance)
 
 4. Before finishing: Check "Customize configuration before install"
@@ -453,14 +668,15 @@ show_menu() {
     echo
     echo "1) Install Virtualization Packages"
     echo "2) Update GRUB to enable/configure IOMMU"
+    print_warning "[Must Reboot for GRUB changes to take effect]"
     echo "3) Check IOMMU Groups (Manually Identify IOMMU Group"
     echo "   with your GPU and GPU Audio Device IDs)"
     echo "4) Configure VFIO for GPU Passthrough (Auto Finds"
     echo "   GPU and GPU Audio Device IDs if IOMMU is enabled)"
     echo "5) Configure initramfs (Lets VIFO claim devices before other OS drivers)"
-    print_warning "[Make sure your Monitor is plugged into your iGPU]"
+    print_warning "[Must Reboot- Make sure your Monitor is plugged into your iGPU]"
     echo "6) Prepare Other SSD (Setting up Another Physical"
-    echo "   Drive for Windows VM Storage) [Unmount & Wipe]"
+    echo "   Drive for VM Storage) [Unmount, Wipe & Partition]"
     echo "7) Show VM Creation Guide (virt-manager)"
     echo "8) Validate System"
     echo "9) Run Complete Setup (Steps 1-6)"
