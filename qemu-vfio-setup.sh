@@ -76,7 +76,7 @@ create_backup() {
     sudo mkdir -p "$BACKUP_DIR"
 }
 
-# Function to install virtualization packages
+# Function to install virtualization packages - Step 1
 install_packages() {
     print_header "Installing Virtualization Packages"
     
@@ -88,6 +88,18 @@ install_packages() {
     
     print_status "Adding user to libvirt group..."
     sudo usermod -a -G libvirt "$USER"
+    
+    # Install Looking Glass client
+    print_status "Installing Looking Glass client..."
+    if command -v yay &> /dev/null; then
+        print_status "Installing Looking Glass from AUR using yay..."
+        yay -S looking-glass
+    else
+        print_warning "yay not found. Please install Looking Glass manually:"
+        echo "git clone https://aur.archlinux.org/yay.git"
+        echo "cd yay && makepkg -si"
+        echo "yay -S looking-glass"
+    fi
     
     print_status "Checking virtualization support..."
     if lscpu | grep -q Virtualization; then
@@ -832,6 +844,351 @@ validate_system() {
     fi
 }
 
+# Function to configure Looking Glass for VM
+configure_looking_glass() {
+    print_header "Configure Looking Glass for VM"
+    
+    print_status "Looking Glass allows you to view your VM's dGPU output on your Linux host"
+    print_status "without needing a physical monitor connected to the dGPU."
+    echo
+    
+    # Check if libvirtd is running
+    if ! systemctl is-active --quiet libvirtd; then
+        print_error "libvirt service is not running. Please start it first."
+        return 1
+    fi
+    
+    # Show available VMs
+    print_status "Available VMs:"
+    sudo virsh list --all
+    
+    echo
+    read -p "Enter your VM name (e.g., win11): " vm_name
+    
+    if [[ -z "$vm_name" ]]; then
+        print_error "VM name cannot be empty"
+        return 1
+    fi
+    
+    # Check if VM exists
+    if ! sudo virsh list --all | grep -q "$vm_name"; then
+        print_error "VM '$vm_name' not found. Please check the name and try again."
+        return 1
+    fi
+    
+    print_status "Configuring VM '$vm_name' for Looking Glass..."
+    
+    # Check if IVSHMEM device already exists
+    print_status "Checking for existing IVSHMEM device..."
+    if sudo virsh dumpxml "$vm_name" | grep -q "looking-glass"; then
+        print_warning "IVSHMEM device already exists in VM configuration"
+        echo "Current IVSHMEM configuration:"
+        sudo virsh dumpxml "$vm_name" | grep -A 3 -B 1 "looking-glass" | sed 's/^/  /'
+        echo
+        read -p "Do you want to remove the existing device and add a new one? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Removing existing IVSHMEM device..."
+            if sudo virt-xml "$vm_name" --remove-device --shmem name=looking-glass; then
+                print_status "✓ Existing IVSHMEM device removed"
+            else
+                print_error "Failed to remove existing IVSHMEM device"
+                return 1
+            fi
+        else
+            print_status "Keeping existing IVSHMEM device. Skipping device configuration."
+            # Still need to ensure shared memory file and service are set up
+        fi
+    fi
+    
+    # Add IVSHMEM device to VM (only if it doesn't exist or was removed)
+    if ! sudo virsh dumpxml "$vm_name" | grep -q "looking-glass"; then
+        print_status "Adding IVSHMEM device to VM..."
+        if sudo virt-xml "$vm_name" --add-device --shmem name=looking-glass,model.type=ivshmem-plain,size=128,size.unit=M; then
+            print_status "✓ IVSHMEM device added successfully"
+        else
+            print_error "Failed to add IVSHMEM device to VM"
+            return 1
+        fi
+    else
+        print_status "✓ IVSHMEM device already configured"
+    fi
+    
+    # Create shared memory file
+    print_status "Creating shared memory file..."
+    sudo touch /dev/shm/looking-glass
+    sudo chown "$USER:users" /dev/shm/looking-glass
+    sudo chmod 660 /dev/shm/looking-glass
+    
+    # Create systemd service for shared memory
+    print_status "Creating systemd service for shared memory..."
+    sudo tee /etc/systemd/system/looking-glass-shm.service > /dev/null << EOF
+[Unit]
+Description=Create Looking Glass shared memory
+After=dev-shm.mount
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'touch /dev/shm/looking-glass && chown $USER:users /dev/shm/looking-glass && chmod 660 /dev/shm/looking-glass'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Enable the service
+    print_status "Enabling looking-glass-shm service..."
+    sudo systemctl enable looking-glass-shm.service
+    
+    # Start the service
+    print_status "Starting looking-glass-shm service..."
+    sudo systemctl start looking-glass-shm.service
+    
+    # Verify service status
+    if systemctl is-active --quiet looking-glass-shm.service; then
+        print_status "✓ looking-glass-shm service is active"
+    else
+        print_warning "looking-glass-shm service may not be running properly"
+    fi
+    
+    # Verify shared memory file
+    if [[ -f "/dev/shm/looking-glass" ]]; then
+        print_status "✓ Shared memory file created successfully"
+        ls -la /dev/shm/looking-glass
+    else
+        print_error "Shared memory file was not created"
+        return 1
+    fi
+    
+    echo
+    print_status "Looking Glass configuration completed!"
+    echo
+    print_status "Next steps:"
+    echo "1. Start your VM using virt-manager"
+    echo "2. Download and install Looking Glass Host on Windows from:"
+    echo "   https://looking-glass.io/downloads"
+    echo "3. Install the IVSHMEM driver in Windows Device Manager"
+    echo "4. Launch Looking Glass client on Linux: looking-glass-client"
+    echo
+    print_warning "Note: The shared memory file will be recreated automatically on each boot"
+    print_warning "Make sure your monitor is connected to your iGPU before starting the VM"
+}
+
+# Function to clean up duplicate IVSHMEM devices
+cleanup_duplicate_ivshmem() {
+    print_header "Clean Up Duplicate IVSHMEM Devices"
+    
+    # Check if libvirtd is running
+    if ! systemctl is-active --quiet libvirtd; then
+        print_error "libvirt service is not running. Please start it first."
+        return 1
+    fi
+    
+    # Show available VMs
+    print_status "Available VMs:"
+    sudo virsh list --all
+    
+    echo
+    read -p "Enter your VM name to clean up (e.g., win11): " vm_name
+    
+    if [[ -z "$vm_name" ]]; then
+        print_error "VM name cannot be empty"
+        return 1
+    fi
+    
+    # Check if VM exists
+    if ! sudo virsh list --all | grep -q "$vm_name"; then
+        print_error "VM '$vm_name' not found. Please check the name and try again."
+        return 1
+    fi
+    
+    # Count IVSHMEM devices
+    local ivshmem_count=$(sudo virsh dumpxml "$vm_name" | grep -c "looking-glass")
+    
+    if [[ $ivshmem_count -eq 0 ]]; then
+        print_status "No IVSHMEM devices found for VM '$vm_name'"
+        return 0
+    elif [[ $ivshmem_count -eq 1 ]]; then
+        print_status "Only one IVSHMEM device found. No cleanup needed."
+        return 0
+    else
+        print_warning "Found $ivshmem_count IVSHMEM devices (duplicates detected)"
+        echo "Current IVSHMEM devices:"
+        sudo virsh dumpxml "$vm_name" | grep -A 3 -B 1 "looking-glass" | sed 's/^/  /'
+        echo
+        
+        print_warning "This will remove ALL IVSHMEM devices and add a single clean one."
+        read -p "Do you want to proceed? (y/N): " -n 1 -r
+        echo
+        
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Removing all IVSHMEM devices..."
+            
+            # Remove all IVSHMEM devices
+            while sudo virsh dumpxml "$vm_name" | grep -q "looking-glass"; do
+                if sudo virt-xml "$vm_name" --remove-device --shmem name=looking-glass; then
+                    print_status "✓ Removed IVSHMEM device"
+                else
+                    print_error "Failed to remove IVSHMEM device"
+                    return 1
+                fi
+            done
+            
+            # Add a single clean IVSHMEM device
+            print_status "Adding clean IVSHMEM device..."
+            if sudo virt-xml "$vm_name" --add-device --shmem name=looking-glass,model.type=ivshmem-plain,size=128,size.unit=M; then
+                print_status "✓ Clean IVSHMEM device added successfully"
+            else
+                print_error "Failed to add clean IVSHMEM device"
+                return 1
+            fi
+            
+            print_status "Cleanup completed! VM now has a single IVSHMEM device."
+        else
+            print_status "Cleanup cancelled."
+        fi
+    fi
+}
+
+# Function to validate Looking Glass configuration
+validate_looking_glass() {
+    print_header "Validate Looking Glass Configuration"
+    
+    local errors=0
+    local warnings=0
+    
+    # Check if libvirtd is running
+    if ! systemctl is-active --quiet libvirtd; then
+        print_error "libvirt service is not running"
+        ((errors++))
+    else
+        print_status "✓ libvirt service is running"
+    fi
+    
+    # Show available VMs
+    print_status "Available VMs:"
+    sudo virsh list --all
+    
+    echo
+    read -p "Enter your VM name to validate (e.g., win11): " vm_name
+    
+    if [[ -z "$vm_name" ]]; then
+        print_error "VM name cannot be empty"
+        return 1
+    fi
+    
+    # Check if VM exists
+    if ! sudo virsh list --all | grep -q "$vm_name"; then
+        print_error "VM '$vm_name' not found. Please check the name and try again."
+        return 1
+    fi
+    
+    print_status "Validating Looking Glass configuration for VM: $vm_name"
+    echo
+    
+    # Check VM XML for IVSHMEM device
+    print_status "Checking VM XML for IVSHMEM device..."
+    local ivshmem_count=$(sudo virsh dumpxml "$vm_name" | grep -c "looking-glass")
+    
+    if [[ $ivshmem_count -eq 0 ]]; then
+        print_error "✗ IVSHMEM device not found in VM XML"
+        print_warning "Run step 8 to configure Looking Glass for this VM"
+        ((errors++))
+    elif [[ $ivshmem_count -eq 1 ]]; then
+        print_status "✓ IVSHMEM device found in VM XML"
+        
+        # Show the IVSHMEM configuration
+        echo "IVSHMEM Configuration:"
+        sudo virsh dumpxml "$vm_name" | grep -A 3 -B 1 "looking-glass" | sed 's/^/  /'
+    else
+        print_error "✗ Multiple IVSHMEM devices found ($ivshmem_count devices)"
+        print_warning "This can cause conflicts. Run step 8C to clean up duplicates"
+        echo "Current IVSHMEM devices:"
+        sudo virsh dumpxml "$vm_name" | grep -A 3 -B 1 "looking-glass" | sed 's/^/  /'
+        ((errors++))
+    fi
+    
+    # Check looking-glass-shm service status
+    print_status "Checking looking-glass-shm service..."
+    if systemctl is-enabled looking-glass-shm.service &>/dev/null; then
+        print_status "✓ looking-glass-shm service is enabled"
+    else
+        print_error "✗ looking-glass-shm service is not enabled"
+        print_warning "Run step 8 to configure Looking Glass for this VM"
+        ((errors++))
+    fi
+    
+    if systemctl is-active looking-glass-shm.service &>/dev/null; then
+        print_status "✓ looking-glass-shm service is running"
+    else
+        print_warning "⚠ looking-glass-shm service is not running"
+        print_status "Attempting to start the service..."
+        if sudo systemctl start looking-glass-shm.service; then
+            print_status "✓ Service started successfully"
+        else
+            print_error "✗ Failed to start the service"
+            ((errors++))
+        fi
+    fi
+    
+    # Check shared memory file
+    print_status "Checking shared memory file..."
+    if [[ -f "/dev/shm/looking-glass" ]]; then
+        print_status "✓ Shared memory file exists"
+        echo "File details:"
+        ls -la /dev/shm/looking-glass | sed 's/^/  /'
+        
+        # Check file permissions
+        local file_owner=$(stat -c '%U:%G' /dev/shm/looking-glass)
+        local file_perms=$(stat -c '%a' /dev/shm/looking-glass)
+        
+        if [[ "$file_owner" == "$USER:users" ]]; then
+            print_status "✓ File ownership is correct: $file_owner"
+        else
+            print_warning "⚠ File ownership is incorrect: $file_owner (expected: $USER:users)"
+            ((warnings++))
+        fi
+        
+        if [[ "$file_perms" == "660" ]]; then
+            print_status "✓ File permissions are correct: $file_perms"
+        else
+            print_warning "⚠ File permissions are incorrect: $file_perms (expected: 660)"
+            ((warnings++))
+        fi
+    else
+        print_error "✗ Shared memory file does not exist"
+        print_warning "Run step 8 to configure Looking Glass for this VM"
+        ((errors++))
+    fi
+    
+    # Check if Looking Glass client is installed
+    print_status "Checking Looking Glass client installation..."
+    if command -v looking-glass-client &> /dev/null; then
+        print_status "✓ Looking Glass client is installed"
+    else
+        print_warning "⚠ Looking Glass client not found"
+        print_warning "Run step 1 to install Looking Glass"
+        ((warnings++))
+    fi
+    
+    # Summary
+    echo
+    print_status "Validation Summary:"
+    if [[ $errors -eq 0 && $warnings -eq 0 ]]; then
+        print_status "✓ All Looking Glass components are properly configured!"
+        echo
+        print_status "You can now:"
+        echo "1. Start your VM using virt-manager"
+        echo "2. Install Looking Glass Host on Windows from: https://looking-glass.io/downloads"
+        echo "3. Launch Looking Glass client: looking-glass-client"
+    elif [[ $errors -eq 0 ]]; then
+        print_warning "Looking Glass is configured but has $warnings warning(s). Check the details above."
+    else
+        print_error "Looking Glass configuration has $errors error(s) and $warnings warning(s)."
+        print_warning "Please address the errors before using Looking Glass."
+    fi
+}
+
 # Function to show main menu
 show_menu() {
     clear
@@ -839,7 +1196,7 @@ show_menu() {
     echo
     echo "This script will help you set up QEMU with Nvidia GPU passthrough for Windows VMs."
     echo
-    echo "1) Install Virtualization Packages"
+    echo "1) Install Virtualization Packages (includes Looking Glass)"
     echo "2) Update GRUB to enable/configure IOMMU"
     print_warning "[Must Reboot for GRUB changes to take effect]"
     echo "3) Check IOMMU Groups (Manually Identify IOMMU Group"
@@ -853,7 +1210,10 @@ show_menu() {
     echo "   Options: Single, Multiple, EFI+Windows, or Raw"
     echo "6C) Show Current Partition Layout (parted -l & lsblk -l)"
     echo "7) Show VM Creation Guide (virt-manager)"
-    echo "8) Validate System"
+    echo "8) Configure Looking Glass for VM (View VM dGPU output on Linux host)"
+    echo "8C) Clean Up Duplicate IVSHMEM Devices"
+    echo "9) Validate Looking Glass Configuration (Check VM XML, service, shared memory)"
+    echo "10) Validate System"
     echo "0) Exit"
     echo
 }
@@ -870,7 +1230,7 @@ main() {
     
     while true; do
         show_menu
-        read -p "Select an option (0-8, 6C): " choice
+        read -p "Select an option (0-10, 6C, 8C): " choice
         
         case $choice in
             1)
@@ -898,6 +1258,15 @@ main() {
                 show_vm_creation_guide
                 ;;
             8)
+                configure_looking_glass
+                ;;
+            8C|8c)
+                cleanup_duplicate_ivshmem
+                ;;
+            9)
+                validate_looking_glass
+                ;;
+            10)
                 validate_system
                 ;;
             0)
@@ -905,7 +1274,7 @@ main() {
                 exit 0
                 ;;
             *)
-                print_error "Invalid option. Please select 0-8 or 6C."
+                print_error "Invalid option. Please select 0-10, 6C, or 8C."
                 ;;
         esac
         
