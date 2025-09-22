@@ -82,6 +82,11 @@ An interactive bash script that automates the complete setup of QEMU on Arch Lin
 - Formats partitions with NTFS for Windows compatibility
 - Creates EFI System Partition (FAT32) for UEFI booting
 
+### 6C. Partition Layout Display
+- Shows current partition tables using `parted -l`
+- Displays block devices using `lsblk -l`
+- Useful for identifying drives and partitions before/after setup
+
 ### 7. VM Creation Guide
 - Step-by-step virt-manager configuration
 - GPU passthrough setup instructions
@@ -98,6 +103,7 @@ The script provides an interactive menu with the following options:
 4. **Configure VFIO** - Set up VFIO for GPU binding
 5. **Configure initramfs** - Modify initramfs for VFIO
 6. **Prepare Second SSD** - Prepare storage for VM(s) with advanced partitioning options
+6C. **Show Partition Layout** - Display current partition tables and block devices
 7. **Show VM Creation Guide** - Display virt-manager instructions
 8. **Validate System** - Check configuration status
 9. **Run Complete Setup** - Execute steps 1-6 automatically

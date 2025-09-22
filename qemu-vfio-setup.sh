@@ -689,7 +689,25 @@ create_efi_windows_partitions() {
     print_warning "The EFI partition will be automatically used for UEFI booting."
 }
 
-# Function to show virt-manager guidance
+# Function to show current partition layout
+show_partition_layout() {
+    print_header "Current Partition Layout"
+    
+    print_status "Running parted -l to show partition tables..."
+    echo
+    sudo parted -l
+    echo
+    
+    print_status "Running lsblk -l to show block devices..."
+    echo
+    lsblk -l
+    echo
+    
+    print_status "Partition layout displayed above."
+    print_warning "Use this information to identify drives and partitions for VM setup."
+}
+
+# Function to show virt-manager guidance - step 7
 show_vm_creation_guide() {
     print_header "VM Creation Guide for virt-manager"
     
@@ -711,7 +729,9 @@ If you used option 3 (EFI + Windows partitions), you have:
    - Memory: 8GB+ RAM recommended
    - CPUs: 4+ cores recommended
 
-3. Storage Configuration:
+3. Before finishing: Check "Customize configuration before install"
+
+4. Storage Configuration:
    - Uncheck "Enable storage for this virtual machine"
    - After creation: Add Hardware → Storage
    - Device type: "Select or create custom storage"
@@ -722,8 +742,6 @@ If you used option 3 (EFI + Windows partitions), you have:
        Note: Use Windows partitions (2,3,4...), EFI partition (1) is handled automatically
      * Raw device: /dev/sdb or /dev/nvme1n1 (if no partitioning)
    - Bus type: VirtIO (for best performance)
-
-4. Before finishing: Check "Customize configuration before install"
 
 5. Machine Configuration:
    - Firmware: Change from "BIOS" to "UEFI"
@@ -739,12 +757,22 @@ If you used option 3 (EFI + Windows partitions), you have:
 
 8. Install VirtIO Drivers:
    - Add Hardware → Storage (CDROM)
-   - Select VirtIO drivers ISO from /usr/share/edk2-guest-tools/
+   - Select VirtIO drivers ISO from /var/lib/libvirt/images/virtio-win.iso
 
-9. During Windows installation:
-   - Load VirtIO drivers from the CDROM
-   - Browse to: viostor → w11 → amd64
+9. Hit "Begin Installation" in the top right corner
 
+10. Install VirtIO Drivers during Windows installation:
+   - Select "Custom" Install
+   - Hit "Load Driver"
+   - Hit "Browse"
+   - Find your virtual drive/usb
+   - Browse to: viostor/w11/amd64
+   - You will be brought back to "Where do you want to install Windows?" Screen After
+
+11. During Windows Installation Screens Following After:
+    - If you want to avoid Signing in to Microsoft Account
+        - Disconnect from the internet on the Microsoft Sign in screen
+        - You will get a local sign-in option instead
 EOF
 
     print_status "VirtIO drivers location:"
@@ -755,7 +783,7 @@ EOF
     fi
 }
 
-# Function to validate system
+# Function to validate system - Step 8
 validate_system() {
     print_header "System Validation"
     
@@ -783,10 +811,11 @@ validate_system() {
     fi
     
     # Check IOMMU support
-    if ! dmesg | grep -q "IOMMU enabled"; then
-        print_warning "IOMMU may not be enabled. Check if you've rebooted after configuration."
+    if [[ -d "/sys/kernel/iommu_groups" ]] && [[ "$(ls -A /sys/kernel/iommu_groups 2>/dev/null)" ]]; then
+        local iommu_group_count=$(ls /sys/kernel/iommu_groups | wc -l)
+        print_status "✓ IOMMU is enabled (found $iommu_group_count IOMMU groups)"
     else
-        print_status "✓ IOMMU appears to be enabled"
+        print_warning "IOMMU may not be enabled. Check if you've rebooted after configuration."
     fi
     
     # Check VFIO modules
@@ -822,9 +851,9 @@ show_menu() {
     echo "6) Prepare Other SSD (Setting up Another Physical"
     echo "   Drive for VM Storage) [Unmount, Wipe & Partition]"
     echo "   Options: Single, Multiple, EFI+Windows, or Raw"
+    echo "6C) Show Current Partition Layout (parted -l & lsblk -l)"
     echo "7) Show VM Creation Guide (virt-manager)"
     echo "8) Validate System"
-    echo "9) Run Complete Setup (Steps 1-6)"
     echo "0) Exit"
     echo
 }
@@ -841,7 +870,7 @@ main() {
     
     while true; do
         show_menu
-        read -p "Select an option (0-9): " choice
+        read -p "Select an option (0-8, 6C): " choice
         
         case $choice in
             1)
@@ -862,28 +891,21 @@ main() {
             6)
                 prepare_second_ssd
                 ;;
+            6C|6c)
+                show_partition_layout
+                ;;
             7)
                 show_vm_creation_guide
                 ;;
             8)
                 validate_system
                 ;;
-            9)
-                print_header "Running Complete Setup"
-                install_packages
-                configure_iommu
-                create_iommu_checker
-                configure_vfio
-                configure_initramfs
-                prepare_second_ssd
-                print_status "Complete setup finished! Please reboot and then run validation."
-                ;;
             0)
                 print_status "Exiting..."
                 exit 0
                 ;;
             *)
-                print_error "Invalid option. Please select 0-9."
+                print_error "Invalid option. Please select 0-8 or 6C."
                 ;;
         esac
         
