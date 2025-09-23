@@ -917,8 +917,7 @@ configure_looking_glass() {
     # Create shared memory file
     print_status "Creating shared memory file..."
     sudo touch /dev/shm/looking-glass
-    sudo chown "$USER:users" /dev/shm/looking-glass
-    sudo chmod 660 /dev/shm/looking-glass
+    sudo chmod 777 /dev/shm/looking-glass
     
     # Create systemd service for shared memory
     print_status "Creating systemd service for shared memory..."
@@ -929,7 +928,7 @@ After=dev-shm.mount
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'touch /dev/shm/looking-glass && chown $USER:users /dev/shm/looking-glass && chmod 660 /dev/shm/looking-glass'
+ExecStart=/bin/bash -c 'touch /dev/shm/looking-glass && chmod 777 /dev/shm/looking-glass'
 RemainAfterExit=yes
 
 [Install]
@@ -962,16 +961,54 @@ EOF
     
     echo
     print_status "Looking Glass configuration completed!"
-    echo
-    print_status "Next steps:"
-    echo "1. Start your VM using virt-manager"
-    echo "2. Download and install Looking Glass Host on Windows from:"
-    echo "   https://looking-glass.io/downloads"
-    echo "3. Install the IVSHMEM driver in Windows Device Manager"
-    echo "4. Launch Looking Glass client on Linux: looking-glass-client"
-    echo
     print_warning "Note: The shared memory file will be recreated automatically on each boot"
     print_warning "Make sure your monitor is connected to your iGPU before starting the VM"
+}
+
+# Function to show Looking Glass next steps - Windows - Step 10
+show_looking_glass_next_steps_windows() {
+    print_header "Looking Glass Next Steps"
+    
+    print_status "After configuring Looking Glass, follow these steps to complete the setup:"
+    echo
+    echo "1. Start your VM using virt-manager"
+    echo "   - Launch virt-manager and start your Windows VM"
+    echo "   - Make sure your monitor is connected to your iGPU (not dGPU)"
+    echo
+    echo "2. Download and install Looking Glass Host on Windows"
+    echo "   - Download from: https://looking-glass.io/downloads"
+    echo "   - Select 'Windows Host Bianry'"
+    echo "   - Extract the zip file"
+    echo "   - Run 'looking-glass-host-setup.exe' as Administrator"
+    echo "   - The installer will:"
+    echo "     * Install the Looking Glass service"
+    echo "     * Download the IVSHMEM driver"
+    echo "     * Configure automatic startup"
+    echo
+    echo "3. Install the IVSHMEM driver in Windows Device Manager"
+    echo "   - (CAN SKIP STEP) if 'IVSHMEM Device' is found under System Devices in Device Manager"
+    echo "   - Open Device Manager (devmgmt.msc)"
+    echo "   - Look for 'PCI Memory Controller' with yellow warning"
+    echo "   - Right-click → Update Driver → Browse"
+    echo "   - Point to the extracted Looking Glass folder"
+    echo "   - Navigate to: host/platform/Windows/ivshmem/"
+    echo
+    echo "4. Verify IVSHMEM Installation in Windows"
+    echo "   - Open Services (services.msc)"
+    echo "   - Look for 'Looking Glass (host)' service"
+    echo "   - Ensure it's set to 'Automatic' and 'Started'"
+    echo
+    echo "5. Launch Looking Glass client on Linux"
+    echo "   - Run: looking-glass-client"
+    echo "   - The client will connect to your VM's dGPU output"
+    echo
+    print_warning "Important Notes:"
+    echo "- Your monitor must be connected to your iGPU (integrated graphics)"
+    echo "- The dGPU will be passed through to the VM"
+    echo "- Looking Glass shares the dGPU output back to your Linux host"
+    echo "- The shared memory file is recreated automatically on each boot"
+    echo
+    print_status "If you encounter issues, run step 9 to validate your configuration."
 }
 
 # Function to clean up duplicate IVSHMEM devices
@@ -1050,7 +1087,7 @@ cleanup_duplicate_ivshmem() {
     fi
 }
 
-# Function to validate Looking Glass configuration
+# Function to validate Looking Glass configuration - Step 9
 validate_looking_glass() {
     print_header "Validate Looking Glass Configuration"
     
@@ -1139,20 +1176,12 @@ validate_looking_glass() {
         ls -la /dev/shm/looking-glass | sed 's/^/  /'
         
         # Check file permissions
-        local file_owner=$(stat -c '%U:%G' /dev/shm/looking-glass)
         local file_perms=$(stat -c '%a' /dev/shm/looking-glass)
         
-        if [[ "$file_owner" == "$USER:users" ]]; then
-            print_status "✓ File ownership is correct: $file_owner"
-        else
-            print_warning "⚠ File ownership is incorrect: $file_owner (expected: $USER:users)"
-            ((warnings++))
-        fi
-        
-        if [[ "$file_perms" == "660" ]]; then
+        if [[ "$file_perms" == "777" ]]; then
             print_status "✓ File permissions are correct: $file_perms"
         else
-            print_warning "⚠ File permissions are incorrect: $file_perms (expected: 660)"
+            print_warning "⚠ File permissions are incorrect: $file_perms (expected: 777)"
             ((warnings++))
         fi
     else
@@ -1213,7 +1242,8 @@ show_menu() {
     echo "8) Configure Looking Glass for VM (View VM dGPU output on Linux host)"
     echo "8C) Clean Up Duplicate IVSHMEM Devices"
     echo "9) Validate Looking Glass Configuration (Check VM XML, service, shared memory)"
-    echo "10) Validate System"
+    echo "10) Show Looking Glass Next Steps - Windows (Complete setup guide)"
+    echo "11) Validate System"
     echo "0) Exit"
     echo
 }
@@ -1230,7 +1260,7 @@ main() {
     
     while true; do
         show_menu
-        read -p "Select an option (0-10, 6C, 8C): " choice
+        read -p "Select an option (0-11, 6C, 8C): " choice
         
         case $choice in
             1)
@@ -1267,6 +1297,9 @@ main() {
                 validate_looking_glass
                 ;;
             10)
+                show_looking_glass_next_steps_windows
+                ;;
+            11)
                 validate_system
                 ;;
             0)
@@ -1274,7 +1307,7 @@ main() {
                 exit 0
                 ;;
             *)
-                print_error "Invalid option. Please select 0-10, 6C, or 8C."
+                print_error "Invalid option. Please select 0-11, 6C, or 8C."
                 ;;
         esac
         
