@@ -785,6 +785,14 @@ If you used option 3 (EFI + Windows partitions), you have:
     - If you want to avoid Signing in to Microsoft Account
         - Disconnect from the internet on the Microsoft Sign in screen
         - You will get a local sign-in option instead
+        
+12. Install Nvidia STUDIO Ready Driver for your GPU from NVIDIA Website
+    - Go to the NVIDIA Website and download the driver for your GPU
+    - Install the driver
+    - Restart the VM
+    - Verify the driver is installed by checking the "Display Adapters" in Device Manager
+    - If you see "NVIDIA Corporation GeForce RTX 4070" in the "Display Adapters" then the driver is installed correctly
+    
 EOF
 
     print_status "VirtIO drivers location:"
