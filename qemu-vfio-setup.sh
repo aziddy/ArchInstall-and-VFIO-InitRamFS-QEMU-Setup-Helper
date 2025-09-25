@@ -771,7 +771,7 @@ If you used option 3 (EFI + Windows partitions), you have:
    - Add Hardware → Storage (CDROM)
    - Select VirtIO drivers ISO from /var/lib/libvirt/images/virtio-win.iso
 
-9. Hit "Begin Installation" in the top right corner
+9. Hit "Begin Installation" in the top left corner
 
 10. Install VirtIO Drivers during Windows installation:
    - Select "Custom" Install
