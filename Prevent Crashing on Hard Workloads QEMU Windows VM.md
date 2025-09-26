@@ -70,21 +70,25 @@ sudo mkinitcpio -P
 > - Ensures clean GPU state between VM sessions
 > - Prevents GPU driver crashes in subsequent VM boots
 
-### **3. \[AMD Only\] Enable `topoext`**
+### 3. \[AMD Only\] Enable `topoext`, `constant_tsc` & `nonstop_tsc
 [Looking Glass Link - topoext AMD CPU Feature Flag](https://looking-glass.io/docs/B7-rc1/install_libvirt/#additional-tuning)
 
-##### 3.A) Check if your AMD CPU has the Feature Flag
+##### 3.A) Check if your AMD CPU has the Feature Flags
 Run
 ```bash
 lscpu | grep topoext
+lscpu | grep constant_tsc
+lscpu | grep nonstop_tsc
 ```
-If you see `topoext` in the list, your CPU supports it
+If you see the flags in the list, your CPU supports them
 
 ##### 3.B) Enable CPU Feature Flag on VM
 VM's libvert XML
 ```xml
 <cpu mode='host-passthrough'>
   <feature policy='require' name='topoext'/>
+  <feature policy='require' name='constant_tsc'/>
+  <feature policy='require' name='nonstop_tsc'/>
 </cpu>
 ```
 
@@ -94,11 +98,42 @@ VM's libvert XML
 > 	- This is an AMD-specific CPU flag called _Topology Extensions_. It lets the operating system inside the VM know how the CPU cores are arranged (which ones are real cores and which ones are hyper-threaded siblings)
 > 	- Can hurt performance or scheduling efficiency if not enabled
 
+
+> [!INFO] Whats `constant_tsc`& `nonstop_tsc` Feature Flags?
+> ### nonstop_tsc
+> Makes sure your **Time Stamp Counter** keeps running when your CPU is asleep
+> 
+> ### constant_tsc
+> Regular TSC (Time Stamp Counter):
+> ```bash
+ > CPU @ 4.9GHz → TSC counts at 4.9 billion cycles/second
+> CPU @ 3.8GHz → TSC counts at 3.8 billion cycles/second
+> CPU @ 1.2GHz → TSC counts at 1.2 billion cycles/second
+> ```
+> Constant TSC:
+> ```bash
+> CPU @ 4.9GHz → TSC counts at FIXED 100MHz rate
+> CPU @ 3.8GHz → TSC counts at FIXED 100MHz rate  
+> CPU @ 1.2GHz → TSC counts at FIXED 100MHz rate
+> ```
+> Solution: TSC rate never changes = consistent timing always
+> 
+> **✅ With `constant_tsc` (You Have This!):**
+> - **Thermal throttling happens** → Game timing stays perfect
+> - **CPU drops from 4.9GHz to 2.0GHz** → TSC still ticks at same rate
+> - **Game physics/networking** → No timing glitches during throttling
+> - **VM stability** → Much less likely to crash from thermal events
+> 
+>  **❌ Without `constant_tsc`:**
+> - **Thermal throttling happens** → TSC suddenly runs slower
+> - **Game thinks time slowed down 2.5x** → Physics breaks, network timeouts
+> - **VM crashes** → DirectX/Vulkan drivers get confused by time jumps
+
 ### 4. **Blacklist Nvidia Drivers from Running on Host**
 
 If you run the command
 ```bash
-sudo dmesg -w
+sudo dmesg -w # wathc mode / continuous 
 ```
 and see a lot of 
 ```bash

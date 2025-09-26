@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# AMD topoext CPU Feature Flag Enable Script
+# AMD CPU Feature Flags Enable Script (topoext, constant_tsc, nonstop_tsc)
 # Based on "Prevent Crashing on Hard Workloads QEMU Windows VM.md" section 3
-# This script checks for AMD topoext support and configures VMs to use it
+# This script checks for AMD CPU feature flags support and configures VMs to use them
 
 set -euo pipefail
 
@@ -51,21 +51,43 @@ check_amd_cpu() {
     print_success "AMD CPU detected: $vendor"
 }
 
-# Function to check if topoext feature flag is available
-check_topoext_support() {
-    print_status "Checking for topoext CPU feature flag support..."
+# Function to check if AMD CPU feature flags are available
+check_amd_cpu_features() {
+    print_status "Checking for AMD CPU feature flags support..."
     
     local topoext_check=$(lscpu | grep -i topoext || true)
+    local constant_tsc_check=$(lscpu | grep -i constant_tsc || true)
+    local nonstop_tsc_check=$(lscpu | grep -i nonstop_tsc || true)
+    
+    local missing_flags=()
     
     if [[ -z "$topoext_check" ]]; then
-        print_error "topoext feature flag not found in CPU features"
-        print_error "Your AMD CPU does not support topoext"
+        missing_flags+=("topoext")
+    else
+        print_success "topoext feature flag found: $topoext_check"
+    fi
+    
+    if [[ -z "$constant_tsc_check" ]]; then
+        missing_flags+=("constant_tsc")
+    else
+        print_success "constant_tsc feature flag found: $constant_tsc_check"
+    fi
+    
+    if [[ -z "$nonstop_tsc_check" ]]; then
+        missing_flags+=("nonstop_tsc")
+    else
+        print_success "nonstop_tsc feature flag found: $nonstop_tsc_check"
+    fi
+    
+    if [[ ${#missing_flags[@]} -gt 0 ]]; then
+        print_error "Missing CPU feature flags: ${missing_flags[*]}"
+        print_error "Your AMD CPU does not support all required feature flags"
         print_status "Available CPU flags:"
         lscpu | grep -E "Flags|Features" | head -5
         exit 1
     fi
     
-    print_success "topoext feature flag found: $topoext_check"
+    print_success "All required AMD CPU feature flags are supported"
 }
 
 # Function to list available VMs
@@ -94,8 +116,8 @@ list_vms() {
     return 0
 }
 
-# Function to check if VM already has topoext configured
-check_vm_topoext() {
+# Function to check if VM already has AMD CPU feature flags configured
+check_vm_amd_features() {
     local vm_name="$1"
     # Clean up VM name (remove any extra quotes or whitespace)
     vm_name=$(echo "$vm_name" | tr -d '\n\r"' | xargs)
@@ -112,23 +134,39 @@ check_vm_topoext() {
         return 1
     fi
     
-    # Check if topoext is already configured
+    # Check if all AMD CPU feature flags are already configured
+    local topoext_configured=false
+    local constant_tsc_configured=false
+    local nonstop_tsc_configured=false
+    
     if echo "$xml_config" | grep -q 'name="topoext"' || echo "$xml_config" | grep -q "name='topoext'"; then
-        print_warning "VM '$vm_name' already has topoext configured"
+        topoext_configured=true
+    fi
+    
+    if echo "$xml_config" | grep -q 'name="constant_tsc"' || echo "$xml_config" | grep -q "name='constant_tsc'"; then
+        constant_tsc_configured=true
+    fi
+    
+    if echo "$xml_config" | grep -q 'name="nonstop_tsc"' || echo "$xml_config" | grep -q "name='nonstop_tsc'"; then
+        nonstop_tsc_configured=true
+    fi
+    
+    if [[ "$topoext_configured" == true && "$constant_tsc_configured" == true && "$nonstop_tsc_configured" == true ]]; then
+        print_warning "VM '$vm_name' already has all AMD CPU feature flags configured"
         return 0
     fi
     
     return 1
 }
 
-# Function to configure VM with topoext
-configure_vm_topoext() {
+# Function to configure VM with AMD CPU feature flags
+configure_vm_amd_features() {
     local vm_name="$1"
     # Clean up VM name (remove any extra quotes or whitespace)
     vm_name=$(echo "$vm_name" | tr -d '\n\r"' | xargs)
     local backup_file="/tmp/${vm_name}_config_backup_$(date +%Y%m%d_%H%M%S).xml"
     
-    print_status "Configuring VM '$vm_name' with topoext..."
+    print_status "Configuring VM '$vm_name' with AMD CPU feature flags (topoext, constant_tsc, nonstop_tsc)..."
     
     # Create backup of current VM configuration
     if virsh dumpxml "$vm_name" > "$backup_file"; then
@@ -143,10 +181,10 @@ configure_vm_topoext() {
     
     if [[ "$vm_state" == "running" ]]; then
         print_warning "VM '$vm_name' is currently running"
-        print_warning "topoext configuration will be applied after VM shutdown"
+        print_warning "AMD CPU feature flags configuration will be applied after VM shutdown"
     fi
     
-    # Configure topoext by editing the XML directly
+    # Configure AMD CPU feature flags by editing the XML directly
     local temp_xml="/tmp/${vm_name}_temp_config.xml"
     
     # Get current XML configuration
@@ -155,40 +193,64 @@ configure_vm_topoext() {
         return 1
     fi
     
-    # Check if topoext is already in the XML
+    # Check if all AMD CPU feature flags are already in the XML
+    local topoext_exists=false
+    local constant_tsc_exists=false
+    local nonstop_tsc_exists=false
+    
     if grep -q 'name="topoext"' "$temp_xml" || grep -q "name='topoext'" "$temp_xml"; then
-        print_warning "topoext feature is already configured in VM '$vm_name'"
+        topoext_exists=true
+    fi
+    
+    if grep -q 'name="constant_tsc"' "$temp_xml" || grep -q "name='constant_tsc'" "$temp_xml"; then
+        constant_tsc_exists=true
+    fi
+    
+    if grep -q 'name="nonstop_tsc"' "$temp_xml" || grep -q "name='nonstop_tsc'" "$temp_xml"; then
+        nonstop_tsc_exists=true
+    fi
+    
+    if [[ "$topoext_exists" == true && "$constant_tsc_exists" == true && "$nonstop_tsc_exists" == true ]]; then
+        print_warning "All AMD CPU feature flags are already configured in VM '$vm_name'"
         print_warning "No changes needed. Exiting."
         rm -f "$temp_xml"
         return 0
     fi
     
-    # Modify XML to add topoext feature
+    # Modify XML to add AMD CPU feature flags
     print_status "Modifying XML configuration..."
     
     # Check if CPU section already exists and has host-passthrough mode
     if grep -q "<cpu mode='host-passthrough'" "$temp_xml"; then
-        print_status "Found existing host-passthrough CPU section, adding topoext feature..."
-        # CPU section exists with host-passthrough, add topoext feature
-        sed -i "/<cpu mode='host-passthrough'/a\\    <feature policy=\"require\" name=\"topoext\"/>" "$temp_xml"
+        print_status "Found existing host-passthrough CPU section, adding AMD CPU feature flags..."
+        # CPU section exists with host-passthrough, add AMD CPU feature flags
+        if [[ "$topoext_exists" == false ]]; then
+            sed -i "/<cpu mode='host-passthrough'/a\\    <feature policy=\"require\" name=\"topoext\"/>" "$temp_xml"
+        fi
+        if [[ "$constant_tsc_exists" == false ]]; then
+            sed -i "/<cpu mode='host-passthrough'/a\\    <feature policy=\"require\" name=\"constant_tsc\"/>" "$temp_xml"
+        fi
+        if [[ "$nonstop_tsc_exists" == false ]]; then
+            sed -i "/<cpu mode='host-passthrough'/a\\    <feature policy=\"require\" name=\"nonstop_tsc\"/>" "$temp_xml"
+        fi
     elif grep -q "<cpu mode=" "$temp_xml"; then
-        print_status "Found existing CPU section, replacing with host-passthrough and topoext..."
+        print_status "Found existing CPU section, replacing with host-passthrough and AMD CPU feature flags..."
         # CPU section exists but not host-passthrough, replace it
-        sed -i "s|<cpu mode='[^']*'[^>]*>|<cpu mode='host-passthrough'>\\n    <feature policy=\"require\" name=\"topoext\"/>|g" "$temp_xml"
+        sed -i "s|<cpu mode='[^']*'[^>]*>|<cpu mode='host-passthrough'>\\n    <feature policy=\"require\" name=\"topoext\"/>\\n    <feature policy=\"require\" name=\"constant_tsc\"/>\\n    <feature policy=\"require\" name=\"nonstop_tsc\"/>|g" "$temp_xml"
     else
-        print_status "No CPU section found, adding new CPU section with topoext..."
+        print_status "No CPU section found, adding new CPU section with AMD CPU feature flags..."
         # CPU section doesn't exist, add it
-        sed -i "s|<vcpu[^>]*>|<vcpu>\\n  <cpu mode='host-passthrough'>\\n    <feature policy=\"require\" name=\"topoext\"/>\\n  </cpu>|g" "$temp_xml"
+        sed -i "s|<vcpu[^>]*>|<vcpu>\\n  <cpu mode='host-passthrough'>\\n    <feature policy=\"require\" name=\"topoext\"/>\\n    <feature policy=\"require\" name=\"constant_tsc\"/>\\n    <feature policy=\"require\" name=\"nonstop_tsc\"/>\\n  </cpu>|g" "$temp_xml"
     fi
     
     # Show the modified CPU section for verification
     print_status "Modified CPU section:"
-    grep -A 5 '<cpu mode=' "$temp_xml" || true
+    grep -A 8 '<cpu mode=' "$temp_xml" || true
     
     # Apply the modified configuration
     if virsh define "$temp_xml"; then
-        print_success "Successfully configured VM '$vm_name' with topoext"
-        print_status "VM will use topoext feature flag on next boot"
+        print_success "Successfully configured VM '$vm_name' with AMD CPU feature flags"
+        print_status "VM will use topoext, constant_tsc, and nonstop_tsc feature flags on next boot"
         
         if [[ "$vm_state" == "running" ]]; then
             print_warning "VM is currently running. You may need to restart the VM for changes to take effect"
@@ -198,7 +260,7 @@ configure_vm_topoext() {
         rm -f "$temp_xml"
         return 0
     else
-        print_error "Failed to configure VM '$vm_name' with topoext"
+        print_error "Failed to configure VM '$vm_name' with AMD CPU feature flags"
         print_error "Restoring backup configuration..."
         virsh define "$backup_file" &>/dev/null || true
         rm -f "$temp_xml"
@@ -206,10 +268,10 @@ configure_vm_topoext() {
     fi
 }
 
-# Function to show topoext information
-show_topoext_info() {
+# Function to show AMD CPU feature flags information
+show_amd_features_info() {
     echo
-    print_status "AMD topoext CPU Feature Flag Information:"
+    print_status "AMD CPU Feature Flags Information:"
     echo
     echo "topoext (Topology Extensions):"
     echo "  - AMD-specific CPU feature flag"
@@ -218,10 +280,21 @@ show_topoext_info() {
     echo "  - Improves performance and scheduling efficiency in VMs"
     echo "  - Prevents performance degradation from incorrect CPU topology detection"
     echo
+    echo "constant_tsc (Constant Time Stamp Counter):"
+    echo "  - Ensures TSC runs at a fixed rate regardless of CPU frequency changes"
+    echo "  - Prevents timing issues during thermal throttling"
+    echo "  - Maintains consistent game physics and networking timing"
+    echo "  - Reduces VM crashes from thermal events"
+    echo
+    echo "nonstop_tsc (Non-Stop Time Stamp Counter):"
+    echo "  - Keeps TSC running even when CPU is in sleep states"
+    echo "  - Ensures consistent timing across CPU power management"
+    echo "  - Prevents timing glitches during CPU state transitions"
+    echo
     echo "Configuration:"
     echo "  - Sets CPU mode to 'host-passthrough'"
-    echo "  - Requires 'topoext' feature flag"
-    echo "  - Only works with AMD CPUs that support this feature"
+    echo "  - Requires 'topoext', 'constant_tsc', and 'nonstop_tsc' feature flags"
+    echo "  - Only works with AMD CPUs that support these features"
     echo
 }
 
@@ -258,9 +331,9 @@ main() {
     
     check_root
     check_amd_cpu
-    check_topoext_support
+    check_amd_cpu_features
     
-    show_topoext_info
+    show_amd_features_info
     
     # Check if libvirt is available
     if ! command -v virsh &>/dev/null; then
@@ -299,11 +372,11 @@ main() {
                 echo
                 print_status "Processing VM: $vm"
                 
-                if check_vm_topoext "$vm"; then
+                if check_vm_amd_features "$vm"; then
                     print_warning "Skipping VM '$vm' (already configured)"
                     ((skipped_count++))
                 else
-                    if configure_vm_topoext "$vm"; then
+                    if configure_vm_amd_features "$vm"; then
                         ((configured_count++))
                     fi
                 fi
@@ -317,20 +390,22 @@ main() {
         
     else
         # Configure single VM
-        if check_vm_topoext "$vm_selection"; then
-            print_warning "VM '$vm_selection' already has topoext configured"
+        if check_vm_amd_features "$vm_selection"; then
+            print_warning "VM '$vm_selection' already has AMD CPU feature flags configured"
             print_warning "No changes needed. Exiting."
             exit 0
         fi
         
-        configure_vm_topoext "$vm_selection"
+        configure_vm_amd_features "$vm_selection"
     fi
     
     echo
-    print_success "AMD topoext configuration completed!"
+    print_success "AMD CPU feature flags configuration completed!"
     echo
     print_status "topoext will improve CPU topology detection in your VMs"
-    print_status "This should help with performance and scheduling efficiency"
+    print_status "constant_tsc will prevent timing issues during thermal throttling"
+    print_status "nonstop_tsc will maintain consistent timing across CPU power states"
+    print_status "These features should significantly improve VM stability and performance"
 }
 
 # Run main function
