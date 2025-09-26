@@ -753,7 +753,7 @@ If you used option 3 (EFI + Windows partitions), you have:
      * EFI + Windows: /dev/sdb2, /dev/sdb3 (SATA) or /dev/nvme1n1p2, /dev/nvme1n1p3 (NVMe)
        Note: Use Windows partitions (2,3,4...), EFI partition (1) is handled automatically
      * Raw device: /dev/sdb or /dev/nvme1n1 (if no partitioning)
-   - Bus type: VirtIO (for best performance)
+   - Bus type: VirtIO (for best performance) [IMPORTANT]
 
 5. Machine Configuration:
    - Firmware: Change from "BIOS" to "UEFI"
@@ -763,17 +763,23 @@ If you used option 3 (EFI + Windows partitions), you have:
    - Check "Manually set CPU topology"
    - Check "Copy host CPU configuration"
 
-7. Add GPU Passthrough:
+7. Video Options:
+   - Set to VGA
+
+8. Remove Default Tablet Input Device
+   - It Affects Looking Glass
+
+9. Add GPU Passthrough:
    - Add Hardware → PCI Host Device
    - Select your NVIDIA GPU (both GPU and audio device)
 
-8. Install VirtIO Drivers:
+10. Install VirtIO Drivers:
    - Add Hardware → Storage (CDROM)
    - Select VirtIO drivers ISO from /var/lib/libvirt/images/virtio-win.iso
 
-9. Hit "Begin Installation" in the top left corner
+11. Hit "Begin Installation" in the top left corner
 
-10. Install VirtIO Drivers during Windows installation:
+12. Install VirtIO Drivers during Windows installation:
    - Select "Custom" Install
    - Hit "Load Driver"
    - Hit "Browse"
@@ -781,12 +787,12 @@ If you used option 3 (EFI + Windows partitions), you have:
    - Browse to: viostor/w11/amd64
    - You will be brought back to "Where do you want to install Windows?" Screen After
 
-11. During Windows Installation Screens Following After:
+13. During Windows Installation Screens Following After:
     - If you want to avoid Signing in to Microsoft Account
         - Disconnect from the internet on the Microsoft Sign in screen
         - You will get a local sign-in option instead
         
-12. Install Nvidia STUDIO Ready Driver for your GPU from NVIDIA Website
+14. Install Nvidia STUDIO Ready Driver for your GPU from NVIDIA Website
     - Go to the NVIDIA Website and download the driver for your GPU
     - Install the driver
     - Restart the VM
@@ -1081,7 +1087,7 @@ cleanup_duplicate_ivshmem() {
             
             # Add a single clean IVSHMEM device
             print_status "Adding clean IVSHMEM device..."
-            if sudo virt-xml "$vm_name" --add-device --shmem name=looking-glass,model.type=ivshmem-plain,size=128,size.unit=M; then
+            if sudo virt-xml "$vm_name" --add-device --shmem name=looking-glass,model.type=ivshmem-plain,size=256,size.unit=M; then
                 print_status "✓ Clean IVSHMEM device added successfully"
             else
                 print_error "Failed to add clean IVSHMEM device"
