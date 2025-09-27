@@ -223,12 +223,81 @@ lspci -nnk | grep -A3 -B1 NVIDIA
 sudo dmesg | grep -i nvidia
 ```
 
+### 5. **CPU Pinning**
+
+##### Option 5.A) SMT/Hypertheading OFF for 7800X3D
+```xml
+  <!-- Total 6 vCPUs for the VM (cores 2-7) -->
+<vcpu placement='static' cpuset='2-7'>6</vcpu>
+<cputune>
+	<!-- Pin guest vCPUs to cores 2-7 -->
+	<vcpupin vcpu='0' cpuset='2'/>
+	<vcpupin vcpu='1' cpuset='3'/>
+	<vcpupin vcpu='2' cpuset='4'/>
+	<vcpupin vcpu='3' cpuset='5'/>
+	<vcpupin vcpu='4' cpuset='6'/>
+	<vcpupin vcpu='5' cpuset='7'/>
+	
+	<!-- Pin QEMU emulator threads to cores 0-1 -->
+	<emulatorpin cpuset='0-1'/>
+</cputune>
+```
+**Layout**
+- Core 0: Host OS + QEMU emulator
+- Core 1: Host OS + QEMU emulator
+- Core 2: VM vCPU 0
+- Core 3: VM vCPU 1
+- Core 4: VM vCPU 2
+- Core 5: VM vCPU 3
+- Core 6: VM vCPU 4
+- Core 7: VM vCPU 5
+
+##### Option 5.B) SMT/Hypertheading ON for 7800X3D
+```xml
+<!-- Total 12 vCPUs for the VM (6 physical cores × 2 threads) -->
+<vcpu placement='static' cpuset='2-7,10-15'>12</vcpu>
+
+<cputune>
+	<!-- Pin guest vCPUs to physical cores 2-7 (both threads of each core) -->
+	<vcpupin vcpu='0' cpuset='2'/>   <!-- Core 2, Thread 1 -->
+	<vcpupin vcpu='1' cpuset='10'/>  <!-- Core 2, Thread 2 -->
+	<vcpupin vcpu='2' cpuset='3'/>   <!-- Core 3, Thread 1 -->
+	<vcpupin vcpu='3' cpuset='11'/>  <!-- Core 3, Thread 2 -->
+	<vcpupin vcpu='4' cpuset='4'/>   <!-- Core 4, Thread 1 -->
+	<vcpupin vcpu='5' cpuset='12'/>  <!-- Core 4, Thread 2 -->
+	<vcpupin vcpu='6' cpuset='5'/>   <!-- Core 5, Thread 1 -->
+	<vcpupin vcpu='7' cpuset='13'/>  <!-- Core 5, Thread 2 -->
+	<vcpupin vcpu='8' cpuset='6'/>   <!-- Core 6, Thread 1 -->
+	<vcpupin vcpu='9' cpuset='14'/>  <!-- Core 6, Thread 2 -->
+	<vcpupin vcpu='10' cpuset='7'/>  <!-- Core 7, Thread 1 -->
+	<vcpupin vcpu='11' cpuset='15'/> <!-- Core 7, Thread 2 -->
+	
+	<!-- Pin QEMU emulator threads to physical cores 0-1 -->
+	<emulatorpin cpuset='0-1,8-9'/>
+</cputune>
+```
+
+**Layout**
+- Physical Core 0: Threads 0,8   → Host OS + QEMU emulator
+- Physical Core 1: Threads 1,9   → Host OS + QEMU emulator
+- Physical Core 2: Threads 2,10  → VM vCPUs 0,1
+- Physical Core 3: Threads 3,11  → VM vCPUs 2,3  
+- Physical Core 4: Threads 4,12  → VM vCPUs 4,5
+- Physical Core 5: Threads 5,13  → VM vCPUs 6,7
+- Physical Core 6: Threads 6,14  → VM vCPUs 8,9
+- Physical Core 7: Threads 7,15  → VM vCPUs 10,11
 
 
-### 5. **Disable Memballoon**
+### 6. **Disable Memballoon**
 [Looking Glass Link - Disable Memballon](https://looking-glass.io/docs/B7-rc1/install_libvirt/#memballoon)
 
-VM's libvert XML
+You can edit the VM's XML configuration:
+```bash
+# Edit your VM configuration
+sudo virsh edit <VM_NAME>
+```
+
+Find the `<memballoon>` section and change it to:
 ```xml
 <memballoon model="none"/>
 ```
@@ -242,7 +311,7 @@ VM's libvert XML
 > - Can cause crashing if **CPU** or **VFIO Passthrough Device** *(ex dGPU)* tries to access memory that `memballon` takes away from RAM
 
 
-### **6. Power Management Issues**
+### **7. Power Management Issues**
 Aggressive power management can cause instability:
 ```bash
 # Disable power management features that cause crashes
@@ -254,7 +323,7 @@ GRUB_CMDLINE_LINUX_DEFAULT="... pcie_aspm=off processor.max_cstate=1 intel_idle.
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
-### **7. MSI Interrupt Conflicts**
+### 8. MSI Interrupt Conflicts**
 Fix interrupt handling issues:
 ```bash
 # Create VFIO interrupt configuration
@@ -266,7 +335,7 @@ options vfio enable_unsafe_noiommu_mode=1
 options kvm ignore_msrs=1
 ```
 
-### **8. CPU Governor & Scheduling**
+### **9. CPU Governor & Scheduling**
 Set performance governor during gaming:
 ```bash
 # Create a script to set performance mode
@@ -290,7 +359,7 @@ fi
 chmod +x /usr/local/bin/vm-performance.sh
 ```
 
-### **9. Memory Allocation Strategy**
+### **10. Memory Allocation Strategy**
 Reserve memory for your VM:
 ```bash
 # Add hugepages for VM memory
@@ -306,7 +375,7 @@ Configure VM to use hugepages:
 sudo virt-xml <VM_NAME> --edit --memory hugepages=yes
 ```
 
-### **10. Complete VM Configuration Review**
+### **11. Complete VM Configuration Review**
 Export your current VM config and check for issues:
 ```bash
 # Export current VM configuration
