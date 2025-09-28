@@ -296,9 +296,15 @@ GRUB_CMDLINE_LINUX_DEFAULT="... isolcpus=2-7 nohz_full=2-7 rcu_nocbs=2-7"
 > 			- → Host cores handle the cleanup burden
 
 ##### Option 5.B) SMT/Hypertheading ON for 7800X3D - 6 Cores + Threads Pinned
+
+WARNING: 
+- Check X3D Turbo is disabled & SMT is on Auto in UEFI/BIOS
+- Check with linux commands that SMT/Hyperthreading is present before setting VM's XML and GRUB
+
+In `<VM-NAME>.xml`
 ```xml
 <!-- Total 12 vCPUs for the VM (6 physical cores × 2 threads) -->
-<vcpu placement='static' cpuset='2-7,10-15'>12</vcpu>
+<vcpu placement='static'>12</vcpu>
 
 <cputune>
 	<!-- Pin guest vCPUs to physical cores 2-7 (both threads of each core) -->
@@ -329,6 +335,12 @@ GRUB_CMDLINE_LINUX_DEFAULT="... isolcpus=2-7 nohz_full=2-7 rcu_nocbs=2-7"
 - Physical Core 5: Threads 5,13  → VM vCPUs 6,7
 - Physical Core 6: Threads 6,14  → VM vCPUs 8,9
 - Physical Core 7: Threads 7,15  → VM vCPUs 10,11
+
+**GRUB** Changes/Additions:
+```bash
+GRUB_CMDLINE_LINUX_DEFAULT="... isolcpus=2-7,10-15 nohz_full=2-7,10-15 rcu_nocbs=2-7,10-15"
+```
+
 
 
 ### 6. **Disable Memballoon**
@@ -407,9 +419,11 @@ Reserve memory for your VM:
 ```bash
 # Reserve 8192 huge pages (16GB worth of 2MB pages)
 # 8192*2MB = 16384MB or 16GB
+# 14336*2MB = 28672MB or 28GB
 echo 'vm.nr_hugepages = 8192' | sudo tee -a /etc/sysctl.conf
 
 # Allow the libvirt group (ID 78) to access huge pages
+# warning: libvirt group id might be different, check your system first
 echo 'vm.hugetlb_shm_group = 78' | sudo tee -a /etc/sysctl.conf
 
 # Apply the settings immediately
@@ -423,6 +437,10 @@ Configure VM to use hugepages:
 ```bash
 sudo virt-xml <VM_NAME> --edit --memory hugepages=yes
 ```
+
+> [!WARNING] Hugh Pages are not Universally Accessible 
+> - After reboot (or applying with `sudo sysctl -p`), your system will **set aside 16 GB of RAM** (in this example) for HugePages
+> - That memory is no longer available for normal applications—it can only be used by processes that explicitly request HugePages
 
 
 > [!INFO] What are ***Hugepages*** ?
