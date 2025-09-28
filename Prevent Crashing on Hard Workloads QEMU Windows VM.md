@@ -225,10 +225,11 @@ sudo dmesg | grep -i nvidia
 
 ### 5. **CPU Pinning**
 
-##### Option 5.A) SMT/Hypertheading OFF for 7800X3D
+##### Option 5.A) SMT/Hypertheading OFF for 7800X3D - 6 Cores Pinned
+In `<VM-NAME>.xml`
 ```xml
   <!-- Total 6 vCPUs for the VM (cores 2-7) -->
-<vcpu placement='static' cpuset='2-7'>6</vcpu>
+<vcpu placement='static'>6</vcpu>
 <cputune>
 	<!-- Pin guest vCPUs to cores 2-7 -->
 	<vcpupin vcpu='0' cpuset='2'/>
@@ -242,6 +243,7 @@ sudo dmesg | grep -i nvidia
 	<emulatorpin cpuset='0-1'/>
 </cputune>
 ```
+
 **Layout**
 - Core 0: Host OS + QEMU emulator
 - Core 1: Host OS + QEMU emulator
@@ -252,7 +254,48 @@ sudo dmesg | grep -i nvidia
 - Core 6: VM vCPU 4
 - Core 7: VM vCPU 5
 
-##### Option 5.B) SMT/Hypertheading ON for 7800X3D
+**GRUB** Changes/Additions:
+```bash
+GRUB_CMDLINE_LINUX_DEFAULT="... isolcpus=2-7 nohz_full=2-7 rcu_nocbs=2-7"
+```
+
+> [!INFO] What each CPU Pinning **GRUB** Parameter does?
+> - `isolcpus=2-7`
+> 	- **Removes** CPU cores `2-7` from the **Linux kernel scheduler's general pool**
+> 	- Prevents random host processes from interrupting VM cores
+> 	- Reduces CPU cache pollution on VM cores
+> 	- **Linux Scheduler:** *"I only have 2 CPUs (0-1) to run processes on"* 
+> 		- System processes ONLY run on cores 0-1
+> 		- Cores 2-7 are "hidden" from general scheduling
+> 		- Only explicitly pinned processes (your VM) can use cores 2-7
+> - `nohz_full=2-7`
+> 	- **Disables periodic timer ticks** on CPU cores `2-7` when they're running user tasks
+> 	- Eliminates 1000 interruptions per second on VM cores
+> 	- Critical for low-latency applications (gaming, real-time)
+> 	- **Normal behavior:**
+> 		- Every 1ms (1000Hz): TICK! 
+> 			- → Kernel interrupts EVERY core for housekeeping
+> 			- → Breaks VM execution for timer processing
+> 			- → Causes jitter and performance loss
+> 	- **With `nohz_full=2-7`:**
+> 		- Cores 0-1: Still get timer ticks (host needs them)
+> 		- Cores 2-7: NO periodic ticks when running VM
+> 			- → VM can run uninterrupted for longer periods
+> 			- → Much lower latency and jitter
+> - `rcu_nocbs=2-7`
+> 	- **Moves RCU (Read-Copy-Update) callback processing** OFF cores `2-7`
+> 	- Eliminates 1000 interruptions per second on VM cores
+> 	- Critical for low-latency applications (gaming, real-time)
+> 	- **Normal behavior:**
+> 		- RCU System: "Time to clean up old data structures!"
+> 			- → Interrupts ALL cores including VM cores
+> 			- → VM execution paused for RCU housekeeping
+> 	- **With `rcu_nocbs=2-7`:**
+> 		- RCU callbacks for cores `2-7` → Processed on cores `0-1`
+> 			- → VM cores never interrupted for RCU work
+> 			- → Host cores handle the cleanup burden
+
+##### Option 5.B) SMT/Hypertheading ON for 7800X3D - 6 Cores + Threads Pinned
 ```xml
 <!-- Total 12 vCPUs for the VM (6 physical cores × 2 threads) -->
 <vcpu placement='static' cpuset='2-7,10-15'>12</vcpu>
@@ -323,10 +366,10 @@ GRUB_CMDLINE_LINUX_DEFAULT="... pcie_aspm=off processor.max_cstate=1 intel_idle.
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
-### 8. MSI Interrupt Conflicts**
+### 8. **MSI Interrupt Conflicts**
 Fix interrupt handling issues:
 ```bash
-# Create VFIO interrupt configuration
+# Create or edit VFIO interrupt configuration
 sudo nano /etc/modprobe.d/vfio.conf
 
 # Add these lines to your existing vfio.conf:
@@ -359,21 +402,43 @@ fi
 chmod +x /usr/local/bin/vm-performance.sh
 ```
 
-### **10. Memory Allocation Strategy**
+### **10. Configure Hugh Pages**
 Reserve memory for your VM:
 ```bash
-# Add hugepages for VM memory
-echo 'vm.nr_hugepages = 8192' | sudo tee -a /etc/sysctl.conf  # 16GB worth
-echo 'vm.hugetlb_shm_group = 78' | sudo tee -a /etc/sysctl.conf  # libvirt group ID
+# Reserve 8192 huge pages (16GB worth of 2MB pages)
+# 8192*2MB = 16384MB or 16GB
+echo 'vm.nr_hugepages = 8192' | sudo tee -a /etc/sysctl.conf
 
-# Apply immediately
+# Allow the libvirt group (ID 78) to access huge pages
+echo 'vm.hugetlb_shm_group = 78' | sudo tee -a /etc/sysctl.conf
+
+# Apply the settings immediately
 sudo sysctl -p
+
+# Configure your VM to actually use these huge pages
+sudo virt-xml <VM_NAME> --edit --memory hugepages=yes
 ```
 
 Configure VM to use hugepages:
 ```bash
 sudo virt-xml <VM_NAME> --edit --memory hugepages=yes
 ```
+
+
+> [!INFO] What are ***Hugepages*** ?
+> - **Standard**:
+> 	- Linux typically uses 4KB memory pages by default
+> 	- When an application needs large amounts of memory, it gets many small 4KB pages
+> 	- This creates overhead because the CPU has to manage many page table entries
+> - **Huge pages:**
+> 	- Much larger memory pages (typically 2MB or 1GB instead of 4KB)
+> 	- Significantly reduces the number of page table entries needed
+> 	- Improves memory access performance and reduces CPU overhead
+> 	- **Why it bigger pages are better**
+> 		1. **Better Performance**: Your VM can access memory more efficiently
+> 		2. **Reduced CPU Overhead:** Fewer page table lookups = less CPU time spent on memory management
+> 		3. **Prevents Crashes:** More stable memory allocation under heavy workloads (like gaming)
+> 		4. **Memory Dedication:** Reserves physical memory specifically for your VM, preventing host system from using it
 
 ### **11. Complete VM Configuration Review**
 Export your current VM config and check for issues:
