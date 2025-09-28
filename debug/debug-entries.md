@@ -7,11 +7,15 @@ X3D Turbo = ON
 SMT = OFF
 DDR5 Auto Booster = Disabled
 XML/EXPO Profile = Disabled
+dGPU Only Mode = Auto
+SR-IOV Support = Disabled
+GPU Host Translation Cache = Auto
+Motherboard Firmware = F4 # Gigabyte B850M
 GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
 CPU Pinning GRUB = OFF
 CPU Pinning VM XML = OFF
 VM vCPU = 6
-Motherboard Firmware = F4 # Gigabyte B850M
+VM ivshMEM = 256 mb
 Hugepages = 0
 CPU Governer = powersave
 ```
@@ -24,7 +28,7 @@ CPU Governer = powersave
 
 ---
 
-## 28 Sept 2025
+## 28 Sept 2025 - 1
 ```bash
 PBO = 70 Level 5
 Eco Mode = Enabled - 105w
@@ -32,15 +36,46 @@ X3D Turbo = ON
 SMT = OFF
 DDR5 Auto Booster = Disabled
 XML/EXPO Profile = Disabled
+dGPU Only Mode = Auto
+SR-IOV Support = Disabled
+GPU Host Translation Cache = Auto
+Motherboard Firmware = F4 # Gigabyte B850M
 GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
 CPU Pinning GRUB = OFF
 CPU Pinning VM XML = OFF
 VM vCPU = 6
-Motherboard Firmware = F4 # Gigabyte B850M
+VM ivshMEM = 256 mb
 Hugepages = 14336 (28GB)
 CPU Governer = performance
 ```
 
 #### Findings
 - Windows VM Playing Helldivers 2
-    - TBD 
+    - Whole Host crashed after 30min of play  
+
+---
+
+## 28 Sept 2025 - 2
+```bash
+PBO = 80 Level 2
+Eco Mode = Enabled - 105w
+X3D Turbo = ON
+SMT = OFF
+DDR5 Auto Booster = Disabled
+XML/EXPO Profile = Disabled
+dGPU Only Mode = Disabled
+SR-IOV Support = Enabled
+GPU Host Translation Cache = Disabled
+Motherboard Firmware = F4 # Gigabyte B850M
+GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
+CPU Pinning GRUB = OFF
+CPU Pinning VM XML = OFF
+VM vCPU = 6
+VM ivshMEM = 128 mb
+Hugepages = 0
+CPU Governer = performance
+```
+
+#### Findings
+- Windows VM Playing Helldivers 2
+    - TBD
