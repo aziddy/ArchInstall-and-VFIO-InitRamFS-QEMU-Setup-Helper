@@ -14,6 +14,7 @@ Motherboard Firmware = F4 # Gigabyte B850M
 GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
 CPU Pinning GRUB = OFF
 CPU Pinning VM XML = OFF
+Disk Bus Type = SATA
 VM vCPU = 6
 VM ivshMEM = 256 mb
 Hugepages = 0
@@ -43,6 +44,7 @@ Motherboard Firmware = F4 # Gigabyte B850M
 GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
 CPU Pinning GRUB = OFF
 CPU Pinning VM XML = OFF
+Disk Bus Type = SATA
 VM vCPU = 6
 VM ivshMEM = 256 mb
 Hugepages = 14336 (28GB)
@@ -55,7 +57,7 @@ CPU Governer = performance
 
 ---
 
-## 28 Sept 2025 - 2
+## 29 Sept 2025 - 1
 ```bash
 PBO = 80 Level 2
 Eco Mode = Enabled - 105w
@@ -66,14 +68,15 @@ XML/EXPO Profile = Disabled
 dGPU Only Mode = Disabled
 SR-IOV Support = Enabled
 GPU Host Translation Cache = Disabled
-Motherboard Firmware = F4 # Gigabyte B850M
+Motherboard Firmware = F6b # Gigabyte B850M
 GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
 CPU Pinning GRUB = OFF
 CPU Pinning VM XML = OFF
+Disk Bus Type = VirtIO
 VM vCPU = 6
 VM ivshMEM = 128 mb
 Hugepages = 0
-CPU Governer = performance
+CPU Governer = performance # renable on boot
 ```
 
 #### Findings

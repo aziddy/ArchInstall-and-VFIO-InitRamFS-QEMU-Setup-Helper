@@ -2,7 +2,6 @@
 alwaysApply: true
 ---
 ## When adding new steps to an exisiting scripts or making new scripts, make to have the following features:
-- If changes need to be appiled to a specifc libvert/QEMU VM, show list of available VMs and ask user to type in VM name they want to choose
-    - Use @additional_scripts/disable-memballoon.sh as a reference for selecting VM code 
+- use ref @/additional_scripts/hugepage-configure.sh
 - Check if the changes are already applied, warn user, exit script without applying changes again
 - Make sure that if the same script is ran multiple times that it doesnt keep appending the same change to the relevant files more than once
