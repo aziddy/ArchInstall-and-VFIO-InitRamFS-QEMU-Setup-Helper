@@ -6,7 +6,7 @@ Eco Mode = Enabled - 105w
 X3D Turbo = ON
 SMT = OFF
 DDR5 Auto Booster = Disabled
-XML/EXPO Profile = Disabled
+XMP/EXPO Profile = Disabled
 dGPU Only Mode = Auto
 SR-IOV Support = Disabled
 GPU Host Translation Cache = Auto
@@ -36,7 +36,7 @@ Eco Mode = Enabled - 105w
 X3D Turbo = ON
 SMT = OFF
 DDR5 Auto Booster = Disabled
-XML/EXPO Profile = Disabled
+XMP/EXPO Profile = Disabled
 dGPU Only Mode = Auto
 SR-IOV Support = Disabled
 GPU Host Translation Cache = Auto
@@ -64,7 +64,35 @@ Eco Mode = Enabled - 105w
 X3D Turbo = ON
 SMT = OFF
 DDR5 Auto Booster = Disabled
-XML/EXPO Profile = Disabled
+XMP/EXPO Profile = Disabled
+dGPU Only Mode = Disabled
+SR-IOV Support = Enabled
+GPU Host Translation Cache = Disabled
+Motherboard Firmware = F6b # Gigabyte B850M
+GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
+CPU Pinning GRUB = OFF
+CPU Pinning VM XML = OFF
+Disk Bus Type = VirtIO
+VM vCPU = 6
+VM ivshMEM = 128 mb
+Hugepages = 0
+CPU Governer = performance # renable on boot
+```
+
+#### Findings
+- Windows VM Playing Helldivers 2
+    - Played on low settings for 1+ Hours, pretty good
+
+---
+
+## 30 Sept 2025 - 1
+```bash
+PBO = 80 Level 4
+Eco Mode = Enabled - 105w
+X3D Turbo = ON
+SMT = OFF
+DDR5 Auto Booster = Disabled
+XMP/EXPO Profile = Disabled
 dGPU Only Mode = Disabled
 SR-IOV Support = Enabled
 GPU Host Translation Cache = Disabled

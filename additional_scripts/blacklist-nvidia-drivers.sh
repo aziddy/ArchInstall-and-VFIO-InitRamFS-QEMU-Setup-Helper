@@ -122,12 +122,28 @@ check_blacklist_status() {
     for file in "${blacklist_files[@]}"; do
         if [[ -f "$file" ]]; then
             local blacklisted=$(grep -E "^blacklist.*nvidia|^blacklist.*nouveau" "$file" 2>/dev/null || true)
-            if [[ -n "$blacklisted" ]]; then
+            local install_entries=""
+            
+            # Only check for install entries in blacklist-nvidia.conf
+            if [[ "$file" == "/etc/modprobe.d/blacklist-nvidia.conf" ]]; then
+                install_entries=$(grep -E "^install.*nvidia|^install.*nouveau" "$file" 2>/dev/null || true)
+            fi
+            
+            if [[ -n "$blacklisted" ]] || [[ -n "$install_entries" ]]; then
                 blacklist_found=true
                 print_success "Found blacklist configuration in: $file"
-                echo "$blacklisted" | while read -r line; do
-                    echo "  $line"
-                done
+                
+                if [[ -n "$blacklisted" ]]; then
+                    echo "$blacklisted" | while read -r line; do
+                        echo "  $line"
+                    done
+                fi
+                
+                if [[ -n "$install_entries" ]]; then
+                    echo "$install_entries" | while read -r line; do
+                        echo "  $line"
+                    done
+                fi
                 echo
             fi
         fi
@@ -179,11 +195,20 @@ create_blacklist_config() {
     # Create blacklist-nvidia.conf only if it doesn't exist or is different
     if [[ ! -f "$blacklist_file" ]]; then
         cat > "$blacklist_file" << 'EOF'
+# Blacklist NVIDIA drivers
 blacklist nvidia
 blacklist nvidia_drm
 blacklist nvidia_modeset
 blacklist nvidia_uvm
+
+# Blacklist nouveau driver
 blacklist nouveau
+
+# Prevent these modules from loading
+install nvidia /bin/false
+install nvidia_drm /bin/false
+install nvidia_modeset /bin/false
+install nouveau /bin/false
 EOF
         print_success "Created: $blacklist_file"
     else
@@ -209,6 +234,7 @@ EOF
             fi
         done
         
+        
         # Check and add softdep entries individually
         local softdep_entries=("nvidia" "nvidia_drm" "nouveau")
         
@@ -229,11 +255,17 @@ EOF
     else
         print_status "Creating new vfio.conf..."
         cat > "$vfio_file" << 'EOF'
+# Bind the Nvidia GPU to VFIO driver
+# options vfio-pci ids=aaaa:xxxx,aaaa:yyyy
+
+# Prevent loading of conflicting drivers
 blacklist nvidia
 blacklist nvidia_drm
 blacklist nvidia_modeset
 blacklist nvidia_uvm
 blacklist nouveau
+
+# Ensure VFIO loads before conflicting drivers
 softdep nvidia pre: vfio-pci
 softdep nvidia_drm pre: vfio-pci
 softdep nouveau pre: vfio-pci
@@ -323,6 +355,11 @@ show_blacklist_info() {
     echo "  - nvidia_modeset: Mode setting component"
     echo "  - nvidia_uvm: Unified Virtual Memory component"
     echo "  - nouveau: Open source NVIDIA driver"
+    echo
+    echo "Protection methods used:"
+    echo "  - blacklist: Prevents automatic loading of modules"
+    echo "  - install /bin/false: Hijacks module mechanism to prevent loading"
+    echo "    even when other modules try to load them"
     echo
     echo "Files modified:"
     echo "  - /etc/modprobe.d/blacklist-nvidia.conf (created)"

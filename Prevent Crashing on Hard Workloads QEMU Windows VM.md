@@ -11,9 +11,9 @@ Complete VM freezes during gaming often indicate GPU driver crashes. Here's how 
 - Completely uninstall existing drivers with **DDU (Display Driver Uninstaller)** first
 
 **Windows VM Registry Attempt Fix:**
-```bash
 Windows Registry Editor Version 5.00
 
+```bash
 [HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers]
 "TdrLevel"=dword:00000000
 "TdrDelay"=dword:00000000
@@ -167,13 +167,33 @@ sudo nano /etc/modprobe.d/blacklist-nvidia.conf
 
 Add the following content:
 ```bash
-# Blacklist NVIDIA drivers to prevent conflicts with VFIO passthrough
+# Blacklist NVIDIA drivers
 blacklist nvidia
-blacklist nvidia_drm  
+blacklist nvidia_drm
 blacklist nvidia_modeset
 blacklist nvidia_uvm
+
+# Blacklist nouveau driver
 blacklist nouveau
+
+# Prevent these modules from loading
+install nvidia /bin/false
+install nvidia_drm /bin/false
+install nvidia_modeset /bin/false
+install nouveau /bin/false
 ```
+
+
+> [!INTO] Difference between `blacklist` & `install` lines in modprobe.d conf file 
+> - **blacklist**
+> 	- Basically saying to not automatically load in this module yourself
+> 	- ⚠️ But other modules that did auto load in can call other modules to load in, bypassing this
+> - **install \<MODULE\> /bin/false**
+> 	- Hijacks module mechanism
+> 	- Where `/bin/false` tells to immediate exit with no failure status
+> 	- ✅ Other modules calling a module with this on it will not load now
+
+
 
 ##### 4.B) Update Your Existing VFIO Configuration
 
