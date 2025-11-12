@@ -76,7 +76,7 @@ Disk Bus Type = VirtIO
 VM vCPU = 6
 VM ivshMEM = 128 mb
 Hugepages = 0
-CPU Governer = performance # renable on boot
+CPU Governer = performance # re-enable on boot
 ```
 
 #### Findings
@@ -87,7 +87,7 @@ CPU Governer = performance # renable on boot
 
 ## 30 Sept 2025 - 1
 ```bash
-PBO = 80 Level 4
+PBO = 80 Level 4 # Increased PBO Level 2->4
 Eco Mode = Enabled - 105w
 X3D Turbo = ON
 SMT = OFF
@@ -104,9 +104,45 @@ Disk Bus Type = VirtIO
 VM vCPU = 6
 VM ivshMEM = 128 mb
 Hugepages = 0
-CPU Governer = performance # renable on boot
+CPU Governer = performance # re-enable on boot
 ```
 
 #### Findings
 - Windows VM Playing Helldivers 2
-    - TBD
+    - 30min Pretty no crashing
+    - Playing game on low settings and still dip into 60fps range
+        - Gotta figure out how to improve FPS, maybe try
+            - X3DTurbo=OFF && SMT=ON
+            - EcoMode=OFF
+            - DDR5AutoBooster=ON
+            - XMP/EXPO=ON
+
+
+---
+
+## 1 Oct 2025 - 1
+```bash
+PBO = 80 Level 4
+Eco Mode = Disabled # Disabled Eco Mode
+X3D Turbo = ON
+SMT = OFF
+DDR5 Auto Booster = Disabled
+XMP/EXPO Profile = Disabled
+dGPU Only Mode = Disabled
+SR-IOV Support = Enabled
+GPU Host Translation Cache = Disabled
+Motherboard Firmware = F6b # Gigabyte B850M
+GRUB = "quiet amd_iommu=on iommu=pt vfio-pci.ids=10de:2c02,10de:22e9 vfio_iommu_type1.allow_unsafe_interrupts=1 kvm.ignore_msrs=1 pcie_aspm=off"
+CPU Pinning GRUB = OFF
+CPU Pinning VM XML = OFF
+Disk Bus Type = VirtIO
+VM vCPU = 6
+VM ivshMEM = 128 mb
+Hugepages = 0
+CPU Governer = performance # re-enable on boot
+```
+
+#### Findings
+- Windows VM Playing Helldivers 2 on Low Settings
+    - 30 Min of play and no crash
+    - Need to test longer
